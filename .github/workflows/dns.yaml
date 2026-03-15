@@ -48,7 +48,8 @@ jobs:
               }]
             }'
           echo "Route 53 IAM policy ensured"
-          sleep 5
+          echo "Waiting 15s for IAM propagation..."
+          sleep 15
 
       - name: Create Route 53 Hosted Zone
         id: r53
