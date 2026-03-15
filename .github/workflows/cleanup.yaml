@@ -1,0 +1,45 @@
+name: Cleanup Old ECR Images
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPOSITORY: kotvim-code
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  cleanup:
+    name: Clean up old ECR images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete untagged images
+        run: |
+          IMAGES_TO_DELETE=$(aws ecr list-images --repository-name ${{ env.ECR_REPOSITORY }} --filter tagStatus=UNTAGGED --query 'imageIds[*]' --output json)
+          if [ "$IMAGES_TO_DELETE" != "[]" ] && [ -n "$IMAGES_TO_DELETE" ]; then
+            aws ecr batch-delete-image --repository-name ${{ env.ECR_REPOSITORY }} --image-ids "$IMAGES_TO_DELETE"
+            echo "Cleaned up untagged images"
+          else
+            echo "No untagged images to clean up"
+          fi
+
+      - name: Keep only last 10 tagged images
+        run: |
+          OLD_TAGS=$(aws ecr describe-images --repository-name ${{ env.ECR_REPOSITORY }} --query 'sort_by(imageDetails,& imagePushedAt)[*].imageTags[0]' --output text | head -n -10)
+          for TAG in $OLD_TAGS; do
+            if [ "$TAG" != "latest" ] && [ -n "$TAG" ] && [ "$TAG" != "None" ]; then
+              echo "Deleting image with tag: $TAG"
+              aws ecr batch-delete-image --repository-name ${{ env.ECR_REPOSITORY }} --image-ids imageTag=$TAG || true
+            fi
+          done

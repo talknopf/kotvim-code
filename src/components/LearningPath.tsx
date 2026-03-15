@@ -18,6 +18,7 @@ export default function LearningPath() {
           <h2 className="text-4xl sm:text-5xl font-black text-gray-800 mb-4">מסלול הלמידה 🗺️</h2>
           <p className="text-xl text-gray-500">צעד אחרי צעד, מאפס ועד גיבורי קוד!</p>
         </motion.div>
+
         <div className="relative">
           <div className="absolute right-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-kid-green via-kid-purple to-kid-pink hidden md:block" />
           {steps.map((step, i) => (
@@ -30,7 +31,11 @@ export default function LearningPath() {
                   <span className="md:hidden text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded-full">שלב {step.number}</span>
                 </div>
                 <p className="text-gray-600 mb-3">{step.description}</p>
-                <div className="flex flex-wrap gap-2">{step.topics.map((topic, j) => (<span key={j} className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">{topic}</span>))}</div>
+                <div className="flex flex-wrap gap-2">
+                  {step.topics.map((topic, j) => (
+                    <span key={j} className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">{topic}</span>
+                  ))}
+                </div>
               </div>
             </motion.div>
           ))}

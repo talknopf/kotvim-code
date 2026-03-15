@@ -42,7 +42,6 @@ export default function Dashboard() {
   }
 
   if (!session) return null;
-
   const firstName = session.user?.name?.split(' ')[0] || 'מתכנת/ת';
 
   return (
@@ -52,7 +51,7 @@ export default function Dashboard() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-l from-kid-purple to-kid-blue rounded-3xl p-8 text-white mb-10 relative overflow-hidden">
           <div className="absolute top-4 left-4 text-6xl opacity-20">💻</div>
           <div className="absolute bottom-4 left-20 text-4xl opacity-20">🐍</div>
-          <h1 className="text-3xl font-black mb-2">!שלום {firstName} 👋</h1>
+          <h1 className="text-3xl font-black mb-2">שלום {firstName}! 👋</h1>
           <p className="text-white/80 text-lg">מוכנים ללמוד לתכנת? בואו נתחיל!</p>
           <div className="mt-6 bg-white/20 rounded-full h-4 max-w-md">
             <div className="bg-white/80 rounded-full h-4 w-[5%] transition-all duration-500" />
@@ -74,12 +73,13 @@ export default function Dashboard() {
                     <span className="bg-gray-100 px-2 py-1 rounded-full">{lesson.difficulty}</span>
                     <span>⏱️ {lesson.duration}</span>
                   </div>
-                  {!lesson.locked && <button className="mt-4 w-full py-2.5 bg-gradient-to-l from-kid-purple to-kid-blue text-white font-semibold rounded-xl text-sm hover:shadow-md transition-shadow">!בואו נתחיל 🚀</button>}
+                  {!lesson.locked && (
+                    <button className="mt-4 w-full py-2.5 bg-gradient-to-l from-kid-purple to-kid-blue text-white font-semibold rounded-xl text-sm hover:shadow-md transition-shadow">בואו נתחיל! 🚀</button>
+                  )}
                 </motion.div>
               ))}
             </div>
           </div>
-
           <div>
             <h2 className="text-2xl font-bold text-gray-800 mb-6">🏅 הישגים</h2>
             <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm mb-6">

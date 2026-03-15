@@ -14,6 +14,7 @@ export default function Footer() {
           </div>
           <p className="text-sm text-gray-500">© {new Date().getFullYear()} כותבים קוד. כל הזכויות שמורות.</p>
           <div className="flex items-center gap-4 text-sm">
+            <a href="/story" className="hover:text-white transition-colors">הסיפור שלנו</a>
             <a href="#" className="hover:text-white transition-colors">תנאי שימוש</a>
             <a href="#" className="hover:text-white transition-colors">פרטיות</a>
             <a href="#" className="hover:text-white transition-colors">צרו קשר</a>

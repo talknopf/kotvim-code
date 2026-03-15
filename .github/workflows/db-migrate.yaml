@@ -1,0 +1,60 @@
+name: Database Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Migration action'
+        required: true
+        default: 'push'
+        type: choice
+        options:
+          - push
+          - reset
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPOSITORY: kotvim-code
+  EKS_CLUSTER_NAME: presso
+  K8S_NAMESPACE: kotvim-code
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  migrate:
+    name: Run Database Migration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Run migration job
+        run: |
+          IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
+          kubectl delete job kotvim-code-db-migrate -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          sed -i "s|<AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/kotvim-code:latest|${IMAGE}|g" k8s/db-migration-job.yaml
+          if [ "${{ inputs.action }}" = "reset" ]; then
+            sed -i 's|"npx", "prisma", "db", "push"|"npx", "prisma", "db", "push", "--force-reset"|g' k8s/db-migration-job.yaml
+          fi
+          kubectl apply -f k8s/db-migration-job.yaml
+
+      - name: Wait for migration to complete
+        run: kubectl wait --for=condition=complete job/kotvim-code-db-migrate -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+
+      - name: Show migration logs
+        if: always()
+        run: kubectl logs job/kotvim-code-db-migrate -n ${{ env.K8S_NAMESPACE }}
