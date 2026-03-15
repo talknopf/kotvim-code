@@ -14,7 +14,6 @@ on:
 
 env:
   AWS_REGION: eu-west-1
-  ECR_REPOSITORY: kotvim-code
   EKS_CLUSTER_NAME: pressto-prod
   K8S_NAMESPACE: kotvim-code
 
@@ -38,23 +37,60 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Delete previous migration job
+        run: kubectl delete job kotvim-code-db-migrate -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
 
-      - name: Run migration job
+      - name: Read Prisma schema and create migration job
         run: |
-          IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
-          kubectl delete job kotvim-code-db-migrate -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
-          sed -i "s|<AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/kotvim-code:latest|${IMAGE}|g" k8s/db-migration-job.yaml
+          # Base64 encode the prisma schema so we can embed it in the job
+          SCHEMA_B64=$(base64 -w0 prisma/schema.prisma)
+          
+          FORCE_RESET=""
           if [ "${{ inputs.action }}" = "reset" ]; then
-            sed -i 's|"npx", "prisma", "db", "push"|"npx", "prisma", "db", "push", "--force-reset"|g' k8s/db-migration-job.yaml
+            FORCE_RESET="--force-reset"
           fi
-          kubectl apply -f k8s/db-migration-job.yaml
+
+          cat <<EOF | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: kotvim-code-db-migrate
+            namespace: ${{ env.K8S_NAMESPACE }}
+          spec:
+            ttlSecondsAfterFinished: 300
+            template:
+              spec:
+                containers:
+                  - name: migrate
+                    image: node:20-slim
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        echo "Installing prisma..."
+                        npm install -g prisma@5 --no-fund --no-audit 2>&1
+                        mkdir -p /app/prisma
+                        echo "${SCHEMA_B64}" | base64 -d > /app/prisma/schema.prisma
+                        cd /app
+                        echo "Running prisma db push ${FORCE_RESET}..."
+                        prisma db push --skip-generate ${FORCE_RESET}
+                        echo "Migration complete!"
+                    envFrom:
+                      - secretRef:
+                          name: kotvim-code-secrets
+                restartPolicy: Never
+            backoffLimit: 2
+          EOF
 
       - name: Wait for migration to complete
-        run: kubectl wait --for=condition=complete job/kotvim-code-db-migrate -n ${{ env.K8S_NAMESPACE }} --timeout=120s
+        run: kubectl wait --for=condition=complete job/kotvim-code-db-migrate -n ${{ env.K8S_NAMESPACE }} --timeout=180s
 
       - name: Show migration logs
         if: always()
-        run: kubectl logs job/kotvim-code-db-migrate -n ${{ env.K8S_NAMESPACE }}
+        run: |
+          POD=$(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l job-name=kotvim-code-db-migrate --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || true)
+          if [ -n "$POD" ]; then
+            kubectl logs "$POD" -n ${{ env.K8S_NAMESPACE }} 2>/dev/null || echo "Could not fetch logs (RBAC may need pods/log permission)"
+          else
+            echo "No migration pod found"
+          fi
