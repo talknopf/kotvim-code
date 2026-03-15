@@ -32,20 +32,30 @@ jobs:
             --policy-name "route53-access" \
             --policy-document '{
               "Version": "2012-10-17",
-              "Statement": [{
-                "Sid": "Route53HostedZones",
-                "Effect": "Allow",
-                "Action": [
-                  "route53:CreateHostedZone",
-                  "route53:GetHostedZone",
-                  "route53:ListHostedZones",
-                  "route53:ListHostedZonesByName",
-                  "route53:ChangeResourceRecordSets",
-                  "route53:ListResourceRecordSets",
-                  "route53:GetChange"
-                ],
-                "Resource": "*"
-              }]
+              "Statement": [
+                {
+                  "Sid": "Route53HostedZones",
+                  "Effect": "Allow",
+                  "Action": [
+                    "route53:CreateHostedZone",
+                    "route53:GetHostedZone",
+                    "route53:ListHostedZones",
+                    "route53:ListHostedZonesByName",
+                    "route53:ChangeResourceRecordSets",
+                    "route53:ListResourceRecordSets",
+                    "route53:GetChange"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "ELBDescribe",
+                  "Effect": "Allow",
+                  "Action": [
+                    "elasticloadbalancing:DescribeLoadBalancers"
+                  ],
+                  "Resource": "*"
+                }
+              ]
             }'
           echo "Route 53 IAM policy ensured"
           echo "Waiting 15s for IAM propagation..."
@@ -115,49 +125,61 @@ jobs:
           echo "lb_hostname=$LB_HOSTNAME" >> $GITHUB_OUTPUT
           echo "Ingress LB: $LB_HOSTNAME"
 
+      - name: Get ELB Hosted Zone ID
+        id: elb-zone
+        run: |
+          LB_HOSTNAME="${{ steps.ingress-lb.outputs.lb_hostname }}"
+
+          # Extract LB name from hostname (everything before first dot)
+          LB_NAME=$(echo "$LB_HOSTNAME" | cut -d'.' -f1)
+
+          # Try NLB/ALB first (elbv2)
+          ELB_ZONE_ID=$(aws elbv2 describe-load-balancers \
+            --region ${{ env.AWS_REGION }} \
+            --query "LoadBalancers[?DNSName=='${LB_HOSTNAME}'].CanonicalHostedZoneId" \
+            --output text 2>/dev/null)
+
+          if [ -z "$ELB_ZONE_ID" ] || [ "$ELB_ZONE_ID" = "None" ]; then
+            # Try classic ELB
+            ELB_ZONE_ID=$(aws elb describe-load-balancers \
+              --region ${{ env.AWS_REGION }} \
+              --query "LoadBalancerDescriptions[?DNSName=='${LB_HOSTNAME}'].CanonicalHostedZoneNameID" \
+              --output text 2>/dev/null)
+          fi
+
+          if [ -z "$ELB_ZONE_ID" ] || [ "$ELB_ZONE_ID" = "None" ]; then
+            echo "Could not find ELB hosted zone ID, using eu-west-1 NLB default"
+            ELB_ZONE_ID="Z2IFOLAFXWLO4F"
+          fi
+
+          echo "elb_zone_id=$ELB_ZONE_ID" >> $GITHUB_OUTPUT
+          echo "ELB Hosted Zone ID: $ELB_ZONE_ID"
+
       - name: Create Route 53 DNS record
         run: |
           ZONE_ID="${{ steps.r53.outputs.zone_id }}"
           LB_HOSTNAME="${{ steps.ingress-lb.outputs.lb_hostname }}"
           DOMAIN="${{ env.DOMAIN }}"
+          ELB_ZONE_ID="${{ steps.elb-zone.outputs.elb_zone_id }}"
 
-          # eu-west-1 ELB hosted zone ID
-          ELB_ZONE_ID="Z32O12XQLNTSW2"
-
-          if echo "$LB_HOSTNAME" | grep -q "elb.amazonaws.com"; then
-            aws route53 change-resource-record-sets \
-              --hosted-zone-id "$ZONE_ID" \
-              --change-batch '{
-                "Changes": [{
-                  "Action": "UPSERT",
-                  "ResourceRecordSet": {
-                    "Name": "'"$DOMAIN"'",
-                    "Type": "A",
-                    "AliasTarget": {
-                      "HostedZoneId": "'"$ELB_ZONE_ID"'",
-                      "DNSName": "'"$LB_HOSTNAME"'",
-                      "EvaluateTargetHealth": true
-                    }
+          # Always use ALIAS record (zone apex doesn't support CNAME)
+          aws route53 change-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --change-batch '{
+              "Changes": [{
+                "Action": "UPSERT",
+                "ResourceRecordSet": {
+                  "Name": "'"$DOMAIN"'",
+                  "Type": "A",
+                  "AliasTarget": {
+                    "HostedZoneId": "'"$ELB_ZONE_ID"'",
+                    "DNSName": "'"$LB_HOSTNAME"'",
+                    "EvaluateTargetHealth": true
                   }
-                }]
-              }'
-            echo "Created ALIAS A record: $DOMAIN -> $LB_HOSTNAME"
-          else
-            aws route53 change-resource-record-sets \
-              --hosted-zone-id "$ZONE_ID" \
-              --change-batch '{
-                "Changes": [{
-                  "Action": "UPSERT",
-                  "ResourceRecordSet": {
-                    "Name": "'"$DOMAIN"'",
-                    "Type": "CNAME",
-                    "TTL": 300,
-                    "ResourceRecords": [{"Value": "'"$LB_HOSTNAME"'"}]
-                  }
-                }]
-              }'
-            echo "Created CNAME record: $DOMAIN -> $LB_HOSTNAME"
-          fi
+                }
+              }]
+            }'
+          echo "Created ALIAS A record: $DOMAIN -> $LB_HOSTNAME (ELB zone: $ELB_ZONE_ID)"
 
       - name: Summary
         run: |
