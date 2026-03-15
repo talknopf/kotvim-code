@@ -4,8 +4,7 @@ import { AuthProvider } from '@/components/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'כותבים קוד | לומדים לתכנת בכיף!',
-  description:
-    'פלטפורמת למידה אינטראקטיבית לילדים - למדו לתכנת בפייתון בעברית!',
+  description: 'פלטפורמת למידה אינטראקטיבית לילדים - למדו לתכנת בפייתון בעברית!',
   keywords: ['תכנות', 'ילדים', 'פייתון', 'למידה', 'קוד', 'עברית'],
   openGraph: {
     title: 'כותבים קוד',

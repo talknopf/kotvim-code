@@ -11,13 +11,20 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
   ],
-  pages: { signIn: '/', error: '/' },
+  pages: {
+    signIn: '/',
+    error: '/',
+  },
   callbacks: {
     async session({ session, user }) {
-      if (session.user) { session.user.id = user.id; }
+      if (session.user) {
+        session.user.id = user.id;
+      }
       return session;
     },
-    async redirect({ baseUrl }) { return `${baseUrl}/dashboard`; },
+    async redirect({ baseUrl }) {
+      return `${baseUrl}/dashboard`;
+    },
   },
   secret: process.env.NEXTAUTH_SECRET,
 };
