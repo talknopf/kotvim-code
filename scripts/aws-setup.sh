@@ -9,7 +9,7 @@ set -euo pipefail
 #   2. RDS PostgreSQL instance
 #   3. GitHub Actions OIDC provider + IAM role
 #   4. EKS RBAC for the GitHub Actions deployer role
-#   5. Kubernetes secrets (with placeholders for Google OAuth)
+#   5. Kubernetes secrets
 #
 # Prerequisites:
 #   - AWS CLI configured with the presso account
@@ -19,10 +19,14 @@ set -euo pipefail
 # Usage:
 #   chmod +x scripts/aws-setup.sh
 #   ./scripts/aws-setup.sh
+#
+# Optional env vars:
+#   GOOGLE_CLIENT_ID      - Google OAuth client ID
+#   GOOGLE_CLIENT_SECRET  - Google OAuth client secret
 ##############################################################################
 
 AWS_REGION="${AWS_REGION:-eu-west-1}"
-EKS_CLUSTER_NAME="${EKS_CLUSTER_NAME:-presso}"
+EKS_CLUSTER_NAME="${EKS_CLUSTER_NAME:-pressto-prod}"
 ECR_REPO_NAME="kotvim-code"
 GITHUB_ORG="talknopf"
 GITHUB_REPO="kotvim-code"
@@ -50,6 +54,7 @@ command -v kubectl >/dev/null 2>&1 || error "kubectl is not installed"
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 log "AWS Account: ${AWS_ACCOUNT_ID}"
 log "Region: ${AWS_REGION}"
+log "EKS Cluster: ${EKS_CLUSTER_NAME}"
 
 # ─── Step 1: ECR ───────────────────────────────────────────────────────────
 echo ""; info "Step 1: Creating ECR repository..."
@@ -76,6 +81,8 @@ if ! aws rds describe-db-subnet-groups --db-subnet-group-name "kotvim-code-db-su
         --db-subnet-group-description "kotvim-code RDS subnets" --subnet-ids ${EKS_SUBNET_IDS} \
         --region "${AWS_REGION}" --output text >/dev/null
     log "DB subnet group created"
+else
+    warn "DB subnet group already exists, skipping"
 fi
 
 RDS_SG_NAME="kotvim-code-rds-sg"
@@ -91,7 +98,7 @@ if [ "${EXISTING_SG}" = "None" ] || [ -z "${EXISTING_SG}" ]; then
         --source-group "${EKS_NODE_SG}" --region "${AWS_REGION}" >/dev/null
     VPC_CIDR=$(aws ec2 describe-vpcs --vpc-ids "${EKS_VPC_ID}" --region "${AWS_REGION}" --query 'Vpcs[0].CidrBlock' --output text)
     aws ec2 authorize-security-group-ingress --group-id "${RDS_SG_ID}" --protocol tcp --port 5432 \
-        --cidr-blocks "${VPC_CIDR}" --region "${AWS_REGION}" >/dev/null
+        --cidr-ipv4 "${VPC_CIDR}" --region "${AWS_REGION}" >/dev/null
     log "RDS security group created: ${RDS_SG_ID}"
 else
     RDS_SG_ID="${EXISTING_SG}"
@@ -183,33 +190,32 @@ echo ""; info "Step 5: Creating K8s namespace and secrets..."
 kubectl create namespace kotvim-code --dry-run=client -o yaml | kubectl apply -f -
 DATABASE_URL="postgresql://${RDS_MASTER_USER}:${RDS_PASSWORD}@${RDS_ENDPOINT}:5432/${RDS_DB_NAME}?schema=public"
 NEXTAUTH_SECRET=$(openssl rand -base64 32)
+
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-PLACEHOLDER}"
+GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-PLACEHOLDER}"
+
 kubectl create secret generic kotvim-code-secrets --namespace kotvim-code \
     --from-literal=DATABASE_URL="${DATABASE_URL}" --from-literal=NEXTAUTH_SECRET="${NEXTAUTH_SECRET}" \
-    --from-literal=GOOGLE_CLIENT_ID="PLACEHOLDER" --from-literal=GOOGLE_CLIENT_SECRET="PLACEHOLDER" \
+    --from-literal=NEXTAUTH_URL="https://kotvim-code.luposec.io" \
+    --from-literal=GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
+    --from-literal=GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET}" \
     --dry-run=client -o yaml | kubectl apply -f -
-log "K8s secrets created (Google OAuth = placeholder)"
+log "K8s secrets created"
 
 # ─── Summary ──────────────────────────────────────────────────────────────
 echo ""; echo "============================================"
-echo "  ✅ Setup Complete!"; echo "============================================"; echo ""
+echo "  Setup Complete!"; echo "============================================"; echo ""
 log "ECR:  ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME}"
 log "RDS:  ${RDS_ENDPOINT}"
 log "Role: ${ROLE_ARN}"
 echo ""
-echo -e "${YELLOW}━━━ SAVE THESE CREDENTIALS ━━━${NC}"
+echo -e "${YELLOW}--- SAVE THESE CREDENTIALS ---${NC}"
 echo -e "  RDS Password:    ${RED}${RDS_PASSWORD}${NC}"
 echo -e "  NextAuth Secret: ${RED}${NEXTAUTH_SECRET}${NC}"
 echo -e "  Database URL:    ${RED}${DATABASE_URL}${NC}"
-echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${YELLOW}------------------------------${NC}"
 echo ""
 echo "Next steps:"
-echo "  1. Add GitHub secret: AWS_ROLE_ARN = ${ROLE_ARN}"
-echo "  2. After Google OAuth setup, update K8s secret:"
-echo "     kubectl -n kotvim-code create secret generic kotvim-code-secrets \\"
-echo "       --from-literal=DATABASE_URL=\"${DATABASE_URL}\" \\"
-echo "       --from-literal=NEXTAUTH_SECRET=\"${NEXTAUTH_SECRET}\" \\"
-echo "       --from-literal=GOOGLE_CLIENT_ID=\"<ID>\" \\"
-echo "       --from-literal=GOOGLE_CLIENT_SECRET=\"<SECRET>\" \\"
-echo "       --dry-run=client -o yaml | kubectl apply -f -"
-echo "  3. DNS: kotvim-code.luposec.io → EKS ingress"
-echo "  4. Push to master → auto-deploy!"
+echo "  1. Add GitHub secret: gh secret set AWS_ROLE_ARN -R talknopf/kotvim-code -b \"${ROLE_ARN}\""
+echo "  2. DNS: kotvim-code.luposec.io -> EKS ingress"
+echo "  3. Push to master -> auto-deploy!"
