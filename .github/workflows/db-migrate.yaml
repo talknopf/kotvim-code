@@ -15,7 +15,7 @@ on:
 env:
   AWS_REGION: eu-west-1
   ECR_REPOSITORY: kotvim-code
-  EKS_CLUSTER_NAME: presso
+  EKS_CLUSTER_NAME: pressto-prod
   K8S_NAMESPACE: kotvim-code
 
 permissions:
