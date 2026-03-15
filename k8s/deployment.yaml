@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kotvim-code
+  namespace: kotvim-code
+  labels:
+    app: kotvim-code
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kotvim-code
+  template:
+    metadata:
+      labels:
+        app: kotvim-code
+    spec:
+      containers:
+        - name: kotvim-code
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/kotvim-code:latest
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: kotvim-code-secrets
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: NEXTAUTH_URL
+              value: "https://kotvim-code.luposec.io"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /api/auth/session
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/auth/session
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10

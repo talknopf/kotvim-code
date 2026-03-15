@@ -1,0 +1,17 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kotvim-code-db-migrate
+  namespace: kotvim-code
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/kotvim-code:latest
+          command: ["npx", "prisma", "db", "push"]
+          envFrom:
+            - secretRef:
+                name: kotvim-code-secrets
+      restartPolicy: Never
+  backoffLimit: 3
