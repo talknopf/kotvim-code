@@ -1,0 +1,193 @@
+name: Infrastructure Setup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: eu-west-1
+  EKS_CLUSTER_NAME: pressto-prod
+  K8S_NAMESPACE: kotvim-code
+  RDS_DB_NAME: kotvim_code
+  RDS_MASTER_USER: kotvim
+  RDS_ALLOCATED_STORAGE: "20"
+  RDS_INSTANCE_CLASS: db.t4g.micro
+
+jobs:
+  setup-infrastructure:
+    runs-on: ubuntu-latest
+    name: Setup RDS & K8s Secrets
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get EKS cluster VPC details
+        id: eks
+        run: |
+          CLUSTER_INFO=$(aws eks describe-cluster \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }})
+
+          VPC_ID=$(echo "$CLUSTER_INFO" | jq -r '.cluster.resourcesVpcConfig.vpcId')
+          SUBNET_IDS=$(echo "$CLUSTER_INFO" | jq -r '.cluster.resourcesVpcConfig.subnetIds | join(" ")')
+          CLUSTER_SG=$(echo "$CLUSTER_INFO" | jq -r '.cluster.resourcesVpcConfig.clusterSecurityGroupId')
+
+          echo "vpc_id=$VPC_ID" >> $GITHUB_OUTPUT
+          echo "subnet_ids=$SUBNET_IDS" >> $GITHUB_OUTPUT
+          echo "cluster_sg=$CLUSTER_SG" >> $GITHUB_OUTPUT
+
+          echo "VPC: $VPC_ID | Cluster SG: $CLUSTER_SG"
+
+      - name: Create RDS Security Group
+        id: rds-sg
+        run: |
+          VPC_ID="${{ steps.eks.outputs.vpc_id }}"
+          CLUSTER_SG="${{ steps.eks.outputs.cluster_sg }}"
+
+          # Check if SG already exists
+          EXISTING=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=kotvim-code-rds-sg" "Name=vpc-id,Values=$VPC_ID" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "None")
+
+          if [ "$EXISTING" = "None" ] || [ -z "$EXISTING" ]; then
+            SG_ID=$(aws ec2 create-security-group \
+              --group-name kotvim-code-rds-sg \
+              --description "kotvim-code RDS SG" \
+              --vpc-id "$VPC_ID" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'GroupId' --output text)
+
+            # Allow PostgreSQL from EKS cluster security group
+            aws ec2 authorize-security-group-ingress \
+              --group-id "$SG_ID" --protocol tcp --port 5432 \
+              --source-group "$CLUSTER_SG" \
+              --region ${{ env.AWS_REGION }} 2>/dev/null || true
+
+            # Allow PostgreSQL from entire VPC CIDR
+            VPC_CIDR=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'Vpcs[0].CidrBlock' --output text)
+            aws ec2 authorize-security-group-ingress \
+              --group-id "$SG_ID" --protocol tcp --port 5432 \
+              --cidr-ipv4 "$VPC_CIDR" \
+              --region ${{ env.AWS_REGION }} 2>/dev/null || true
+
+            echo "Created SG: $SG_ID"
+          else
+            SG_ID="$EXISTING"
+            echo "SG already exists: $SG_ID"
+          fi
+
+          echo "sg_id=$SG_ID" >> $GITHUB_OUTPUT
+
+      - name: Create RDS DB Subnet Group
+        run: |
+          aws rds create-db-subnet-group \
+            --db-subnet-group-name kotvim-code-db-subnet \
+            --db-subnet-group-description "kotvim-code RDS subnets" \
+            --subnet-ids ${{ steps.eks.outputs.subnet_ids }} \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "Subnet group already exists"
+
+      - name: Get latest PostgreSQL 16.x version
+        id: pg
+        run: |
+          PG_VERSION=$(aws rds describe-db-engine-versions \
+            --engine postgres \
+            --region ${{ env.AWS_REGION }} \
+            --query "DBEngineVersions[?starts_with(EngineVersion, '16.')].EngineVersion" \
+            --output text | tr '\t' '\n' | sort -V | tail -1)
+
+          echo "version=$PG_VERSION" >> $GITHUB_OUTPUT
+          echo "Using PostgreSQL $PG_VERSION"
+
+      - name: Generate RDS password
+        id: rds-pass
+        run: |
+          PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+          echo "::add-mask::$PASSWORD"
+          echo "password=$PASSWORD" >> $GITHUB_OUTPUT
+
+      - name: Create RDS instance
+        run: |
+          aws rds create-db-instance \
+            --db-instance-identifier kotvim-code-db \
+            --db-instance-class ${{ env.RDS_INSTANCE_CLASS }} \
+            --engine postgres \
+            --engine-version ${{ steps.pg.outputs.version }} \
+            --master-username ${{ env.RDS_MASTER_USER }} \
+            --master-user-password "${{ steps.rds-pass.outputs.password }}" \
+            --allocated-storage ${{ env.RDS_ALLOCATED_STORAGE }} \
+            --db-name ${{ env.RDS_DB_NAME }} \
+            --vpc-security-group-ids ${{ steps.rds-sg.outputs.sg_id }} \
+            --db-subnet-group-name kotvim-code-db-subnet \
+            --no-publicly-accessible \
+            --storage-type gp3 \
+            --storage-encrypted \
+            --backup-retention-period 7 \
+            --region ${{ env.AWS_REGION }} \
+            --tags Key=Project,Value=kotvim-code 2>/dev/null || echo "RDS instance may already exist"
+
+      - name: Wait for RDS to be available
+        run: |
+          echo "Waiting for RDS (5-10 min)..."
+          aws rds wait db-instance-available \
+            --db-instance-identifier kotvim-code-db \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Get RDS endpoint
+        id: rds
+        run: |
+          ENDPOINT=$(aws rds describe-db-instances \
+            --db-instance-identifier kotvim-code-db \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[0].Endpoint.Address' --output text)
+
+          echo "endpoint=$ENDPOINT" >> $GITHUB_OUTPUT
+          echo "RDS endpoint: $ENDPOINT"
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Create K8s namespace and secrets
+        run: |
+          kubectl create namespace ${{ env.K8S_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+          NEXTAUTH_SECRET=$(openssl rand -base64 32)
+          DATABASE_URL="postgresql://${{ env.RDS_MASTER_USER }}:${{ steps.rds-pass.outputs.password }}@${{ steps.rds.outputs.endpoint }}:5432/${{ env.RDS_DB_NAME }}?schema=public"
+
+          kubectl create secret generic kotvim-code-secrets \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            --from-literal=DATABASE_URL="$DATABASE_URL" \
+            --from-literal=NEXTAUTH_SECRET="$NEXTAUTH_SECRET" \
+            --from-literal=NEXTAUTH_URL="https://kotvim-code.luposec.io" \
+            --from-literal=GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --from-literal=GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "K8s secrets created in namespace ${{ env.K8S_NAMESPACE }}"
+
+      - name: Summary
+        run: |
+          echo "============================================"
+          echo "  Infrastructure Setup Complete!"
+          echo "============================================"
+          echo "  RDS: ${{ steps.rds.outputs.endpoint }}"
+          echo "  PG:  ${{ steps.pg.outputs.version }}"
+          echo "  NS:  ${{ env.K8S_NAMESPACE }}"
+          echo "  Secret: kotvim-code-secrets"
+          echo ""
+          echo "  Next: push to master to trigger deploy!"
