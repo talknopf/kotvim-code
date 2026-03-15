@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" fill="none">
+  <!-- Background circle -->
+  <circle cx="200" cy="200" r="195" fill="url(#bg-gradient)" />
+  <defs>
+    <linearGradient id="bg-gradient" x1="0" y1="0" x2="400" y2="400">
+      <stop offset="0%" stop-color="#E0EFFF" />
+      <stop offset="100%" stop-color="#C4B5FD" />
+    </linearGradient>
+    <linearGradient id="body-gradient" x1="100" y1="80" x2="300" y2="350">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+    <linearGradient id="face-gradient" x1="120" y1="100" x2="280" y2="240">
+      <stop offset="0%" stop-color="#A78BFA" />
+      <stop offset="100%" stop-color="#6366F1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Body -->
+  <rect x="110" y="200" rx="30" ry="30" width="180" height="140" fill="url(#body-gradient)" />
+
+  <!-- Head -->
+  <rect x="115" y="80" rx="40" ry="40" width="170" height="140" fill="url(#face-gradient)" />
+
+  <!-- Antenna -->
+  <line x1="200" y1="80" x2="200" y2="50" stroke="#8B5CF6" stroke-width="6" stroke-linecap="round" />
+  <circle cx="200" cy="42" r="10" fill="#F59E0B">
+    <animate attributeName="fill" values="#F59E0B;#10B981;#3B82F6;#F59E0B" dur="3s" repeatCount="indefinite" />
+  </circle>
+
+  <!-- Eyes -->
+  <ellipse cx="165" cy="140" rx="18" ry="22" fill="white" />
+  <ellipse cx="235" cy="140" rx="18" ry="22" fill="white" />
+  <circle cx="168" cy="142" r="10" fill="#1E1E1E">
+    <animate attributeName="cx" values="168;172;168;164;168" dur="4s" repeatCount="indefinite" />
+  </circle>
+  <circle cx="238" cy="142" r="10" fill="#1E1E1E">
+    <animate attributeName="cx" values="238;242;238;234;238" dur="4s" repeatCount="indefinite" />
+  </circle>
+  <!-- Eye shine -->
+  <circle cx="172" cy="137" r="4" fill="white" />
+  <circle cx="242" cy="137" r="4" fill="white" />
+
+  <!-- Smile -->
+  <path d="M 165 175 Q 200 205 235 175" stroke="white" stroke-width="5" fill="none" stroke-linecap="round" />
+
+  <!-- Cheeks (blush) -->
+  <circle cx="145" cy="170" r="12" fill="#EC4899" opacity="0.3" />
+  <circle cx="255" cy="170" r="12" fill="#EC4899" opacity="0.3" />
+
+  <!-- Arms -->
+  <rect x="80" y="220" rx="15" ry="15" width="35" height="80" fill="url(#body-gradient)" />
+  <rect x="285" y="220" rx="15" ry="15" width="35" height="80" fill="url(#body-gradient)" />
+
+  <!-- Hands waving -->
+  <g transform="translate(285, 215)">
+    <animateTransform attributeName="transform" type="rotate" values="-10,15,40;10,15,40;-10,15,40" dur="1.5s" repeatCount="indefinite" additive="sum" />
+    <circle cx="15" cy="0" r="18" fill="#A78BFA" />
+  </g>
+
+  <!-- Heart on chest -->
+  <path d="M 190 250 C 190 244, 182 240, 182 248 C 182 254, 200 268, 200 268 C 200 268, 218 254, 218 248 C 218 240, 210 244, 210 250 L 200 264 Z" fill="#EC4899" opacity="0.8">
+    <animate attributeName="opacity" values="0.8;1;0.8" dur="1.5s" repeatCount="indefinite" />
+  </path>
+
+  <!-- Code brackets on body -->
+  <text x="155" y="310" font-family="monospace" font-size="28" fill="white" opacity="0.6">&lt;/&gt;</text>
+
+  <!-- Feet -->
+  <rect x="140" y="330" rx="12" ry="12" width="45" height="30" fill="#6366F1" />
+  <rect x="215" y="330" rx="12" ry="12" width="45" height="30" fill="#6366F1" />
+</svg>
