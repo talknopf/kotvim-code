@@ -23,7 +23,7 @@ data "aws_iam_policy_document" "github_assume_role" {
       identifiers = [aws_iam_openid_connect_provider.github.arn]
     }
 
-    actions = ["sts:AssumeRoleWithWebIdentity"]
+    action = "sts:AssumeRoleWithWebIdentity"
 
     condition {
       test     = "StringEquals"
@@ -179,7 +179,6 @@ data "aws_iam_policy_document" "ec2_access" {
       "ec2:DescribeNetworkInterfaces",
       "ec2:DescribeInstances",
       "ec2:DescribeTags",
-      "ec2:CreateTags",
     ]
 
     resources = ["*"]
@@ -191,6 +190,7 @@ resource "aws_iam_role_policy" "ec2_access" {
   role   = aws_iam_role.github_actions.id
   policy = data.aws_iam_policy_document.ec2_access.json
 }
+
 
 # STS GetCallerIdentity
 data "aws_iam_policy_document" "sts_access" {
@@ -237,6 +237,32 @@ resource "aws_iam_role_policy" "secrets_manager_access" {
   name   = "secrets-manager-access"
   role   = aws_iam_role.github_actions.id
   policy = data.aws_iam_policy_document.secrets_manager_access.json
+}
+
+# Route 53 access for DNS management
+data "aws_iam_policy_document" "route53_access" {
+  statement {
+    sid    = "Route53HostedZones"
+    effect = "Allow"
+
+    actions = [
+      "route53:CreateHostedZone",
+      "route53:GetHostedZone",
+      "route53:ListHostedZones",
+      "route53:ListHostedZonesByName",
+      "route53:ChangeResourceRecordSets",
+      "route53:ListResourceRecordSets",
+      "route53:GetChange",
+    ]
+
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "route53_access" {
+  name   = "route53-access"
+  role   = aws_iam_role.github_actions.id
+  policy = data.aws_iam_policy_document.route53_access.json
 }
 
 # EKS access entry — allows the GH Actions role to interact with the cluster

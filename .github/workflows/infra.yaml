@@ -180,6 +180,141 @@ jobs:
 
           echo "K8s secrets created in namespace ${{ env.K8S_NAMESPACE }}"
 
+      - name: Ensure Route 53 IAM permissions
+        run: |
+          ROLE_NAME="kotvim-code-github-actions"
+          # Self-apply Route 53 policy if not already present
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "route53-access" \
+            --policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [{
+                "Sid": "Route53HostedZones",
+                "Effect": "Allow",
+                "Action": [
+                  "route53:CreateHostedZone",
+                  "route53:GetHostedZone",
+                  "route53:ListHostedZones",
+                  "route53:ListHostedZonesByName",
+                  "route53:ChangeResourceRecordSets",
+                  "route53:ListResourceRecordSets",
+                  "route53:GetChange"
+                ],
+                "Resource": "*"
+              }]
+            }'
+          echo "Route 53 IAM policy applied"
+          # Brief pause to let IAM propagate
+          sleep 5
+
+      - name: Create Route 53 Hosted Zone
+        id: r53
+        run: |
+          DOMAIN="kotvim-code.luposec.io"
+
+          # Check if hosted zone already exists
+          ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+            --dns-name "$DOMAIN" \
+            --query "HostedZones[?Name=='${DOMAIN}.'].Id" \
+            --output text | head -1 | sed 's|/hostedzone/||')
+
+          if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" = "None" ]; then
+            echo "Creating hosted zone for $DOMAIN..."
+            RESULT=$(aws route53 create-hosted-zone \
+              --name "$DOMAIN" \
+              --caller-reference "kotvim-code-$(date +%s)" \
+              --hosted-zone-config Comment="kotvim-code e-learning platform")
+
+            ZONE_ID=$(echo "$RESULT" | jq -r '.HostedZone.Id' | sed 's|/hostedzone/||')
+            echo "Created hosted zone: $ZONE_ID"
+          else
+            echo "Hosted zone already exists: $ZONE_ID"
+          fi
+
+          echo "zone_id=$ZONE_ID" >> $GITHUB_OUTPUT
+
+          # Get NS records for Cloudflare delegation
+          NS_RECORDS=$(aws route53 get-hosted-zone \
+            --id "$ZONE_ID" \
+            --query 'DelegationSet.NameServers' --output text)
+          echo "============================================"
+          echo "  Route 53 NS records (add to Cloudflare):"
+          echo "============================================"
+          echo "$NS_RECORDS" | tr '\t' '\n'
+          echo "============================================"
+
+      - name: Get Ingress LB hostname
+        id: ingress-lb
+        run: |
+          # Find the nginx ingress controller's external LB
+          LB_HOSTNAME=$(kubectl get svc -A \
+            -o jsonpath='{.items[?(@.spec.type=="LoadBalancer")].status.loadBalancer.ingress[0].hostname}' \
+            2>/dev/null | awk '{print $1}')
+
+          if [ -z "$LB_HOSTNAME" ]; then
+            # Try looking specifically in ingress-nginx namespace
+            LB_HOSTNAME=$(kubectl get svc -n ingress-nginx \
+              -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+          fi
+
+          if [ -z "$LB_HOSTNAME" ]; then
+            echo "WARNING: Could not find ingress controller LB. Checking all namespaces..."
+            kubectl get svc -A --field-selector spec.type=LoadBalancer
+            exit 1
+          fi
+
+          echo "lb_hostname=$LB_HOSTNAME" >> $GITHUB_OUTPUT
+          echo "Ingress LB: $LB_HOSTNAME"
+
+      - name: Create Route 53 DNS record
+        run: |
+          ZONE_ID="${{ steps.r53.outputs.zone_id }}"
+          LB_HOSTNAME="${{ steps.ingress-lb.outputs.lb_hostname }}"
+          DOMAIN="kotvim-code.luposec.io"
+
+          # Get the ELB hosted zone ID for the alias target
+          # eu-west-1 ELB hosted zone
+          ELB_ZONE_ID="Z32O12XQLNTSW2"
+
+          # Check if this is a classic ELB or NLB/ALB
+          if echo "$LB_HOSTNAME" | grep -q "elb.amazonaws.com"; then
+            # Use ALIAS record for AWS ELBs
+            aws route53 change-resource-record-sets \
+              --hosted-zone-id "$ZONE_ID" \
+              --change-batch '{
+                "Changes": [{
+                  "Action": "UPSERT",
+                  "ResourceRecordSet": {
+                    "Name": "'"$DOMAIN"'",
+                    "Type": "A",
+                    "AliasTarget": {
+                      "HostedZoneId": "'"$ELB_ZONE_ID"'",
+                      "DNSName": "'"$LB_HOSTNAME"'",
+                      "EvaluateTargetHealth": true
+                    }
+                  }
+                }]
+              }'
+            echo "Created ALIAS A record: $DOMAIN -> $LB_HOSTNAME"
+          else
+            # Use CNAME for non-AWS endpoints
+            aws route53 change-resource-record-sets \
+              --hosted-zone-id "$ZONE_ID" \
+              --change-batch '{
+                "Changes": [{
+                  "Action": "UPSERT",
+                  "ResourceRecordSet": {
+                    "Name": "'"$DOMAIN"'",
+                    "Type": "CNAME",
+                    "TTL": 300,
+                    "ResourceRecords": [{"Value": "'"$LB_HOSTNAME"'"}]
+                  }
+                }]
+              }'
+            echo "Created CNAME record: $DOMAIN -> $LB_HOSTNAME"
+          fi
+
       - name: Summary
         run: |
           echo "============================================"
@@ -189,5 +324,8 @@ jobs:
           echo "  PG:  ${{ steps.pg.outputs.version }}"
           echo "  NS:  ${{ env.K8S_NAMESPACE }}"
           echo "  Secret: kotvim-code-secrets"
+          echo "  DNS Zone: ${{ steps.r53.outputs.zone_id }}"
+          echo "  Ingress LB: ${{ steps.ingress-lb.outputs.lb_hostname }}"
           echo ""
+          echo "  IMPORTANT: Add NS delegation in Cloudflare!"
           echo "  Next: push to master to trigger deploy!"
