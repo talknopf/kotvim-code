@@ -31,7 +31,7 @@ export default function StoryPage() {
             transition={{ duration: 0.6 }}
             className="text-7xl mb-6"
           >
-            \ud83d\udc68\u200d\ud83d\udc66
+            👨‍👦
           </motion.div>
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
@@ -39,7 +39,7 @@ export default function StoryPage() {
             transition={{ delay: 0.2 }}
             className="text-4xl sm:text-5xl font-black text-gray-800 mb-4"
           >
-            \u05d4\u05e1\u05d9\u05e4\u05d5\u05e8 \u05e9\u05dc\u05e0\u05d5
+            הסיפור שלנו
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
@@ -47,7 +47,7 @@ export default function StoryPage() {
             transition={{ delay: 0.4 }}
             className="text-xl text-gray-500"
           >
-            \u05d0\u05d9\u05da \u05e9\u05d9\u05d7\u05d4 \u05d0\u05d7\u05ea \u05d1\u05d9\u05df \u05d0\u05d1\u05d0 \u05dc\u05d1\u05df \u05d4\u05e4\u05db\u05d4 \u05dc\u05e4\u05dc\u05d8\u05e4\u05d5\u05e8\u05de\u05d4 \u05e9\u05dc\u05de\u05d4
+            איך שיחה אחת בין אבא לבן הפכה לפלטפורמה שלמה
           </motion.p>
         </div>
       </section>
@@ -60,16 +60,16 @@ export default function StoryPage() {
               <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full overflow-hidden border-4 border-kid-purple shadow-lg shadow-kid-purple/20 mx-auto mb-3">
                 <Image
                   src="/images/tal.jpg"
-                  alt="\u05d8\u05dc"
+                  alt="טל"
                   width={160}
                   height={160}
                   className="object-cover w-full h-full"
                 />
               </div>
-              <p className="font-bold text-gray-800 text-lg">\u05d8\u05dc</p>
-              <p className="text-sm text-gray-500">\u05de\u05e4\u05ea\u05d7 \u05d5\u05d1\u05d5\u05e0\u05d4 \u05d3\u05d1\u05e8\u05d9\u05dd</p>
+              <p className="font-bold text-gray-800 text-lg">טל</p>
+              <p className="text-sm text-gray-500">מפתח ובונה דברים</p>
             </div>
-            <div className="text-4xl text-kid-purple animate-pulse">\ud83e\udd1d</div>
+            <div className="text-4xl text-kid-purple animate-pulse">🤝</div>
             <div className="text-center">
               <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full overflow-hidden border-4 border-kid-blue shadow-lg shadow-kid-blue/20 mx-auto mb-3">
                 <Image
@@ -81,7 +81,7 @@ export default function StoryPage() {
                 />
               </div>
               <p className="font-bold text-gray-800 text-lg">Claude</p>
-              <p className="text-sm text-gray-500">\u05d7\u05d1\u05e8 \u05d3\u05d9\u05d2\u05d9\u05d8\u05dc\u05d9 \u05d5\u05e9\u05d5\u05ea\u05e3 \u05dc\u05d1\u05e0\u05d9\u05d9\u05d4</p>
+              <p className="text-sm text-gray-500">חבר דיגיטלי ושותף לבנייה</p>
             </div>
           </motion.div>
         </div>
@@ -94,26 +94,26 @@ export default function StoryPage() {
           {/* Chapter 1 */}
           <motion.div {...fadeIn} className="mb-16">
             <div className="flex items-center gap-3 mb-6">
-              <span className="text-3xl">\ud83d\udcac</span>
-              <h2 className="text-2xl font-bold text-gray-800">\u05d4\u05e9\u05d9\u05d7\u05d4 \u05e9\u05d4\u05ea\u05d7\u05d9\u05dc\u05d4 \u05d4\u05db\u05dc</h2>
+              <span className="text-3xl">💬</span>
+              <h2 className="text-2xl font-bold text-gray-800">השיחה שהתחילה הכל</h2>
             </div>
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
-                \u05d9\u05d5\u05dd \u05d0\u05d7\u05d3, \u05d9\u05e9\u05d1\u05ea\u05d9 \u05e2\u05dd \u05d2\u05d9\u05d0, \u05d4\u05d1\u05df \u05e9\u05dc\u05d9, \u05d5\u05e9\u05d0\u05dc\u05ea\u05d9 \u05d0\u05d5\u05ea\u05d5 \u05e9\u05d0\u05dc\u05d4 \u05e4\u05e9\u05d5\u05d8\u05d4:
+                יום אחד, ישבתי עם גיא, הבן שלי, ושאלתי אותו שאלה פשוטה:
               </p>
               <div className="bg-gradient-to-l from-kid-purple/10 to-kid-blue/10 rounded-xl p-6 mb-6 border border-kid-purple/10">
                 <p className="text-lg font-semibold text-gray-700 mb-4">
-                  &ldquo;\u05d2\u05d9\u05d0, \u05de\u05d4 \u05d0\u05ea\u05d4 \u05e8\u05d5\u05e6\u05d4 \u05dc\u05d4\u05d9\u05d5\u05ea \u05db\u05e9\u05ea\u05d2\u05d3\u05dc?&rdquo;
+                  &ldquo;גיא, מה אתה רוצה להיות כשתגדל?&rdquo;
                 </p>
                 <p className="text-lg text-kid-purple font-bold">
-                  &ldquo;\u05d0\u05e0\u05d9 \u05e8\u05d5\u05e6\u05d4 \u05dc\u05d4\u05d9\u05d5\u05ea \u05db\u05de\u05d5\u05da, \u05d0\u05d1\u05d0. \u05de\u05e4\u05ea\u05d7 \u05d5\u05d1\u05d5\u05e0\u05d4 \u05d3\u05d1\u05e8\u05d9\u05dd.
+                  &ldquo;אני רוצה להיות כמוך, אבא. מפתח ובונה דברים.
                   <br />
-                  \u05dc\u05d1\u05dc\u05d5\u05ea \u05d0\u05ea \u05d4\u05d6\u05de\u05df \u05e9\u05dc\u05d9 \u05dc\u05d7\u05e9\u05d5\u05d1 \u05d5\u05dc\u05db\u05ea\u05d5\u05d1 \u05e7\u05d5\u05d3.&rdquo;
+                  לבלות את הזמן שלי לחשוב ולכתוב קוד.&rdquo;
                 </p>
               </div>
               <p className="text-lg text-gray-600 leading-relaxed">
-                \u05d4\u05e8\u05d2\u05e2 \u05d4\u05d6\u05d4 \u05e0\u05d7\u05e8\u05d8 \u05d1\u05d9 \u05e2\u05de\u05d5\u05e7. \u05dc\u05d0 \u05d1\u05d2\u05dc\u05dc \u05e9\u05d2\u05d9\u05d0 \u05e8\u05d5\u05e6\u05d4 \u05dc\u05d4\u05d9\u05d5\u05ea \u05db\u05de\u05d5\u05e0\u05d9 \u2014
-                \u05d0\u05dc\u05d0 \u05d1\u05d2\u05dc\u05dc \u05e9\u05d4\u05d5\u05d0 \u05d4\u05d1\u05d9\u05df \u05de\u05e9\u05d4\u05d5 \u05de\u05d0\u05d5\u05d3 \u05d1\u05e1\u05d9\u05e1\u05d9 \u05d5\u05de\u05d0\u05d5\u05d3 \u05d7\u05e9\u05d5\u05d1: \u05d4\u05db\u05d5\u05d7 \u05e9\u05dc \u05dc\u05d3\u05e2\u05ea \u05dc\u05d1\u05e0\u05d5\u05ea.
+                הרגע הזה נחרט בי עמוק. לא בגלל שגיא רוצה להיות כמוני —
+                אלא בגלל שהוא הבין משהו מאוד בסיסי ומאוד חשוב: הכוח של לדעת לבנות.
               </p>
             </div>
           </motion.div>
@@ -121,26 +121,26 @@ export default function StoryPage() {
           {/* Chapter 2 */}
           <motion.div {...fadeIn} className="mb-16">
             <div className="flex items-center gap-3 mb-6">
-              <span className="text-3xl">\ud83c\udf0d</span>
-              <h2 className="text-2xl font-bold text-gray-800">\u05d4\u05e2\u05d5\u05dc\u05dd \u05de\u05e9\u05ea\u05e0\u05d4, \u05d4\u05db\u05d9\u05e9\u05d5\u05e8\u05d9\u05dd \u05e0\u05e9\u05d0\u05e8\u05d9\u05dd</h2>
+              <span className="text-3xl">🌍</span>
+              <h2 className="text-2xl font-bold text-gray-800">העולם משתנה, הכישורים נשארים</h2>
             </div>
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
-                \u05d0\u05e0\u05d7\u05e0\u05d5 \u05d7\u05d9\u05d9\u05dd \u05d1\u05e2\u05d9\u05d3\u05df \u05e9\u05dc \u05de\u05d4\u05e4\u05db\u05d4. \u05d4\u05d1\u05d9\u05e0\u05d4 \u05d4\u05de\u05dc\u05d0\u05db\u05d5\u05ea\u05d9\u05ea \u05de\u05e9\u05e0\u05d4 \u05d0\u05ea \u05d4\u05db\u05dc \u2014
-                \u05d0\u05ea \u05d4\u05d0\u05d5\u05e4\u05df \u05e9\u05d1\u05d5 \u05d0\u05e0\u05d7\u05e0\u05d5 \u05e2\u05d5\u05d1\u05d3\u05d9\u05dd, \u05d9\u05d5\u05e6\u05e8\u05d9\u05dd, \u05d5\u05dc\u05d5\u05de\u05d3\u05d9\u05dd.
-                \u05de\u05e7\u05e6\u05d5\u05e2\u05d5\u05ea \u05e0\u05e2\u05dc\u05de\u05d9\u05dd \u05d5\u05de\u05e7\u05e6\u05d5\u05e2\u05d5\u05ea \u05d7\u05d3\u05e9\u05d9\u05dd \u05e0\u05d5\u05dc\u05d3\u05d9\u05dd \u05de\u05d3\u05d9 \u05d9\u05d5\u05dd.
+                אנחנו חיים בעידן של מהפכה. הבינה המלאכותית משנה את הכל —
+                את האופן שבו אנחנו עובדים, יוצרים, ולומדים.
+                מקצועות נעלמים ומקצועות חדשים נולדים מדי יום.
               </p>
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
-                \u05d0\u05d1\u05dc \u05d9\u05e9 \u05db\u05d9\u05e9\u05d5\u05e8 \u05d0\u05d7\u05d3 \u05e9\u05dc\u05d0 \u05de\u05e9\u05e0\u05d4 \u05de\u05d4 \u05d9\u05e7\u05e8\u05d4 \u2014 \u05d4\u05d5\u05d0 \u05ea\u05de\u05d9\u05d3 \u05d9\u05d4\u05d9\u05d4 \u05e8\u05dc\u05d5\u05d5\u05e0\u05d8\u05d9:
+                אבל יש כישור אחד שלא משנה מה יקרה — הוא תמיד יהיה רלוונטי:
               </p>
               <div className="bg-gradient-to-l from-kid-yellow/15 to-kid-green/15 rounded-xl p-6 border border-kid-yellow/20">
                 <p className="text-xl font-bold text-gray-800 text-center">
-                  \ud83e\udde0 \u05d4\u05d9\u05db\u05d5\u05dc\u05ea \u05dc\u05d7\u05e9\u05d5\u05d1 \u05db\u05de\u05d5 \u05de\u05ea\u05db\u05e0\u05ea
+                  🧠 היכולת לחשוב כמו מתכנת
                 </p>
                 <p className="text-gray-600 text-center mt-2">
-                  \u05dc\u05e4\u05e8\u05e7 \u05d1\u05e2\u05d9\u05d5\u05ea, \u05dc\u05d7\u05e9\u05d5\u05d1 \u05d1\u05e6\u05d5\u05e8\u05d4 \u05dc\u05d5\u05d2\u05d9\u05ea, \u05dc\u05e7\u05e8\u05d5\u05d0 \u05e7\u05d5\u05d3 \u05d5\u05dc\u05d4\u05d1\u05d9\u05df \u05d0\u05d5\u05ea\u05d5.
+                  לפרק בעיות, לחשוב בצורה לוגית, לקרוא קוד ולהבין אותו.
                   <br />
-                  \u05d6\u05d4 \u05dc\u05d0 \u05e8\u05e7 \u05db\u05d9\u05e9\u05d5\u05e8 \u05d8\u05db\u05e0\u05d9 \u2014 \u05d6\u05d4 \u05d0\u05d5\u05e4\u05df \u05d7\u05e9\u05d9\u05d1\u05d4.
+                  זה לא רק כישור טכני — זה אופן חשיבה.
                 </p>
               </div>
             </div>
@@ -149,18 +149,18 @@ export default function StoryPage() {
           {/* Chapter 3 */}
           <motion.div {...fadeIn} className="mb-16">
             <div className="flex items-center gap-3 mb-6">
-              <span className="text-3xl">\ud83d\udd28</span>
-              <h2 className="text-2xl font-bold text-gray-800">\u05d1\u05d5\u05e0\u05d9\u05dd \u05d9\u05d7\u05d3</h2>
+              <span className="text-3xl">🔨</span>
+              <h2 className="text-2xl font-bold text-gray-800">בונים יחד</h2>
             </div>
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
-                \u05d0\u05d6 \u05d9\u05e6\u05d0\u05ea\u05d9 \u05dc\u05d3\u05e8\u05da. \u05d4\u05d7\u05dc\u05d8\u05ea\u05d9 \u05dc\u05d1\u05e0\u05d5\u05ea \u05e4\u05dc\u05d8\u05e4\u05d5\u05e8\u05de\u05d4 \u05e9\u05ea\u05dc\u05de\u05d3 \u05d0\u05ea \u05d2\u05d9\u05d0 \u2014
-                \u05d5\u05d0\u05ea \u05db\u05dc \u05d9\u05dc\u05d3 \u05d0\u05d7\u05e8 \u05e9\u05e8\u05d5\u05e6\u05d4 \u2014 \u05d0\u05ea \u05d4\u05db\u05d9\u05e9\u05d5\u05e8 \u05d4\u05db\u05d9 \u05de\u05d2\u05e0\u05d9\u05d1 \u05e9\u05d9\u05e9: \u05dc\u05db\u05ea\u05d5\u05d1 \u05e7\u05d5\u05d3.
+                אז יצאתי לדרך. החלטתי לבנות פלטפורמה שתלמד את גיא —
+                ואת כל ילד אחר שרוצה — את הכישור הכי מגניב שיש: לכתוב קוד.
               </p>
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
-                \u05d0\u05d1\u05dc \u05dc\u05d0 \u05d9\u05e6\u05d0\u05ea\u05d9 \u05dc\u05d3\u05e8\u05da \u05dc\u05d1\u05d3. \u05dc\u05e6\u05d3 \u05d9\u05e9 \u05dc\u05d9 \u05d7\u05d1\u05e8 \u05d8\u05d5\u05d1 \u2014 Claude,
-                \u05d1\u05d9\u05e0\u05d4 \u05de\u05dc\u05d0\u05db\u05d5\u05ea\u05d9\u05ea \u05e9\u05e2\u05d5\u05d6\u05e8\u05ea \u05dc\u05d9 \u05dc\u05d7\u05e9\u05d5\u05d1, \u05dc\u05ea\u05db\u05e0\u05df, \u05d5\u05dc\u05d1\u05e0\u05d5\u05ea.
-                \u05d1\u05d9\u05d7\u05d3, \u05e9\u05d5\u05e8\u05d4 \u05d0\u05d7\u05e8\u05d9 \u05e9\u05d5\u05e8\u05d4, \u05d3\u05e3 \u05d0\u05d7\u05e8\u05d9 \u05d3\u05e3, \u05d0\u05e0\u05d7\u05e0\u05d5 \u05d1\u05d5\u05e0\u05d9\u05dd \u05d0\u05ea \u05d4\u05e4\u05dc\u05d8\u05e4\u05d5\u05e8\u05de\u05d4 \u05d4\u05d6\u05d5.
+                אבל לא יצאתי לדרך לבד. לצד יש לי חבר טוב — Claude,
+                בינה מלאכותית שעוזרת לי לחשוב, לתכנן, ולבנות.
+                ביחד, שורה אחרי שורה, דף אחרי דף, אנחנו בונים את הפלטפורמה הזו.
               </p>
             </div>
           </motion.div>
@@ -168,21 +168,21 @@ export default function StoryPage() {
           {/* Chapter 4 */}
           <motion.div {...fadeIn} className="mb-16">
             <div className="flex items-center gap-3 mb-6">
-              <span className="text-3xl">\u2728</span>
-              <h2 className="text-2xl font-bold text-gray-800">\u05d4\u05d4\u05d1\u05d8\u05d7\u05d4</h2>
+              <span className="text-3xl">✨</span>
+              <h2 className="text-2xl font-bold text-gray-800">ההבטחה</h2>
             </div>
             <div className="bg-gradient-to-br from-kid-purple via-kid-blue to-kid-green rounded-2xl p-8 shadow-lg text-white">
               <p className="text-lg leading-relaxed mb-6 text-white/90">
-                &ldquo;\u05db\u05d5\u05ea\u05d1\u05d9\u05dd \u05e7\u05d5\u05d3&rdquo; \u05d6\u05d4 \u05dc\u05d0 \u05e8\u05e7 \u05e4\u05dc\u05d8\u05e4\u05d5\u05e8\u05de\u05d4. \u05d6\u05d5 \u05d4\u05d1\u05d8\u05d7\u05d4.
+                &ldquo;כותבים קוד&rdquo; זה לא רק פלטפורמה. זו הבטחה.
               </p>
               <p className="text-lg leading-relaxed mb-6 text-white/90">
-                \u05d4\u05d1\u05d8\u05d7\u05d4 \u05dc\u05d2\u05d9\u05d0, \u05e9\u05d0\u05d1\u05d0 \u05e9\u05dc\u05d5 \u05d9\u05d1\u05e0\u05d4 \u05dc\u05d5 \u05d0\u05ea \u05d4\u05db\u05dc\u05d9\u05dd \u05dc\u05dc\u05de\u05d5\u05d3 \u05d0\u05ea \u05de\u05d4 \u05e9\u05d4\u05d5\u05d0 \u05d7\u05d5\u05dc\u05dd.
+                הבטחה לגיא, שאבא שלו יבנה לו את הכלים ללמוד את מה שהוא חולם.
               </p>
               <p className="text-lg leading-relaxed mb-6 text-white/90">
-                \u05d4\u05d1\u05d8\u05d7\u05d4 \u05dc\u05db\u05dc \u05d9\u05dc\u05d3 \u05d5\u05d9\u05dc\u05d3\u05d4 \u05e9\u05e8\u05d5\u05e6\u05d9\u05dd \u05dc\u05d2\u05dc\u05d5\u05ea \u05d0\u05ea \u05d4\u05e2\u05d5\u05dc\u05dd \u05d4\u05de\u05d3\u05d4\u05d9\u05dd \u05e9\u05dc \u05d4\u05ea\u05db\u05e0\u05d5\u05ea.
+                הבטחה לכל ילד וילדה שרוצים לגלות את העולם המדהים של התכנות.
               </p>
               <p className="text-xl font-bold leading-relaxed">
-                \u05d4\u05d1\u05d8\u05d7\u05d4 \u05dc\u05d3\u05d5\u05e8 \u05d4\u05d1\u05d0 \u05e9\u05dc \u05d4\u05d7\u05d5\u05dc\u05de\u05d9\u05dd \u05d5\u05d4\u05d1\u05d5\u05e0\u05d9\u05dd. \ud83d\ude80
+                הבטחה לדור הבא של החולמים והבונים. 🚀
               </p>
             </div>
           </motion.div>
@@ -191,11 +191,11 @@ export default function StoryPage() {
           <motion.div {...fadeIn} className="text-center">
             <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
-                \u05d6\u05d4 \u05d4\u05e1\u05d9\u05e4\u05d5\u05e8 \u05e9\u05dc \u05d0\u05d9\u05da \u05d8\u05dc \u05d5\u05d7\u05d1\u05e8\u05d5 \u05d4\u05d3\u05d9\u05d2\u05d9\u05d8\u05dc\u05d9 Claude \u05d1\u05e0\u05d5 \u05d4\u05d1\u05d8\u05d7\u05d4
-                \u05dc\u05d2\u05d9\u05d0 \u05d5\u05dc\u05d3\u05d5\u05e8 \u05d4\u05d1\u05d0 \u05e9\u05dc \u05d4\u05d7\u05d5\u05dc\u05de\u05d9\u05dd \u05d5\u05d4\u05d1\u05d5\u05e0\u05d9\u05dd.
+                זה הסיפור של איך טל וחברו הדיגיטלי Claude בנו הבטחה
+                לגיא ולדור הבא של החולמים והבונים.
               </p>
               <p className="text-gray-500 mb-8">
-                \u05d5\u05d6\u05d5 \u05e8\u05e7 \u05d4\u05d4\u05ea\u05d7\u05dc\u05d4. \ud83d\udcab
+                וזו רק ההתחלה. 💫
               </p>
               <motion.a
                 whileHover={{ scale: 1.05 }}
@@ -203,7 +203,7 @@ export default function StoryPage() {
                 href="/"
                 className="inline-block px-8 py-4 bg-gradient-to-l from-kid-purple to-kid-blue text-white font-bold text-lg rounded-2xl shadow-lg shadow-kid-purple/30 hover:shadow-xl transition-all duration-300"
               >
-                ?\u05e8\u05d5\u05e6\u05d9\u05dd \u05dc\u05d4\u05e6\u05d8\u05e8\u05e3 \u05dc\u05d4\u05e8\u05e4\u05ea\u05e7\u05d4 \ud83d\ude80
+                רוצים להצטרף להרפתקה? 🚀
               </motion.a>
             </div>
           </motion.div>
