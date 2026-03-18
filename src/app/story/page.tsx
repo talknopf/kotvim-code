@@ -59,7 +59,7 @@ export default function StoryPage() {
             <div className="text-center">
               <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full overflow-hidden border-4 border-kid-purple shadow-lg shadow-kid-purple/20 mx-auto mb-3">
                 <Image
-                  src="/images/tal-placeholder.svg"
+                  src="/images/tal.jpg"
                   alt="טל"
                   width={160}
                   height={160}
