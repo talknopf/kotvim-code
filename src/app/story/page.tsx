@@ -12,9 +12,68 @@ const fadeIn = {
   transition: { duration: 0.7 },
 };
 
+function BuilderBackground() {
+  return (
+    <div className="fixed inset-0 -z-20 overflow-hidden pointer-events-none opacity-[0.04]">
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="circuit" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
+            {/* Cog 1 */}
+            <g transform="translate(40,40)">
+              <circle cx="0" cy="0" r="12" fill="none" stroke="currentColor" strokeWidth="2"/>
+              <circle cx="0" cy="0" r="5" fill="currentColor"/>
+              {[0,45,90,135,180,225,270,315].map((angle, i) => (
+                <rect key={i} x="-2" y="-16" width="4" height="6" rx="1" fill="currentColor"
+                  transform={`rotate(${angle})`}/>
+              ))}
+            </g>
+            {/* Cog 2 */}
+            <g transform="translate(160,150)">
+              <circle cx="0" cy="0" r="18" fill="none" stroke="currentColor" strokeWidth="2"/>
+              <circle cx="0" cy="0" r="7" fill="currentColor"/>
+              {[0,30,60,90,120,150,180,210,240,270,300,330].map((angle, i) => (
+                <rect key={i} x="-2.5" y="-22" width="5" height="7" rx="1" fill="currentColor"
+                  transform={`rotate(${angle})`}/>
+              ))}
+            </g>
+            {/* Wires / Circuit traces */}
+            <path d="M40 52 L40 80 L80 80 L80 120 L120 120" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <path d="M120 120 L120 150 L142 150" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            <circle cx="120" cy="120" r="3" fill="currentColor"/>
+            <circle cx="80" cy="80" r="2" fill="currentColor"/>
+            {/* Horizontal wire */}
+            <path d="M0 100 L30 100 L40 90 L60 90" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+            <circle cx="60" cy="90" r="2" fill="currentColor"/>
+            {/* Small cog */}
+            <g transform="translate(100,40)">
+              <circle cx="0" cy="0" r="8" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+              <circle cx="0" cy="0" r="3" fill="currentColor"/>
+              {[0,60,120,180,240,300].map((angle, i) => (
+                <rect key={i} x="-1.5" y="-11" width="3" height="5" rx="1" fill="currentColor"
+                  transform={`rotate(${angle})`}/>
+              ))}
+            </g>
+            {/* More wires */}
+            <path d="M108 40 L140 40 L140 70 L170 70 L170 132" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+            <circle cx="140" cy="70" r="2" fill="currentColor"/>
+            {/* Diagonal wire */}
+            <path d="M0 170 L20 170 L35 155 L60 155 L60 130" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/>
+            <circle cx="60" cy="130" r="2" fill="currentColor"/>
+            {/* Bracket shapes */}
+            <text x="175" y="50" fontSize="16" fill="currentColor" fontFamily="monospace" opacity="0.5">{'{'}</text>
+            <text x="15" y="140" fontSize="14" fill="currentColor" fontFamily="monospace" opacity="0.5">{'</>'}</text>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#circuit)" className="text-gray-800"/>
+      </svg>
+    </div>
+  );
+}
+
 export default function StoryPage() {
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen relative">
+      <BuilderBackground />
       <Navbar />
 
       {/* Hero section */}
@@ -97,7 +156,7 @@ export default function StoryPage() {
               <span className="text-3xl">💬</span>
               <h2 className="text-2xl font-bold text-gray-800">השיחה שהתחילה הכל</h2>
             </div>
-            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 shadow-sm border border-gray-100">
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
                 יום אחד, ישבתי עם גיא, הבן שלי, ושאלתי אותו שאלה פשוטה:
               </p>
@@ -118,13 +177,47 @@ export default function StoryPage() {
             </div>
           </motion.div>
 
-          {/* Chapter 2 */}
+          {/* Chapter 2 - Father's Legacy */}
+          <motion.div {...fadeIn} className="mb-16">
+            <div className="flex items-center gap-3 mb-6">
+              <span className="text-3xl">🕯️</span>
+              <h2 className="text-2xl font-bold text-gray-800">המנטרה של אבא</h2>
+            </div>
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 shadow-sm border border-gray-100">
+              <p className="text-lg text-gray-600 leading-relaxed mb-6">
+                גדלתי כילד של שני הורים עובדים קשה. לא היה הרבה זמן פנוי בבית שלנו.
+                אבל אבא שלי מצא כל יום כמה דקות — רק כמה דקות — לשבת איתי, להקשיב לחלומות שלי,
+                לרעיונות שלי, לשאיפות שלי.
+              </p>
+              <div className="bg-gradient-to-l from-amber-50 to-orange-50 rounded-xl p-6 mb-6 border border-amber-200/50">
+                <p className="text-xl font-bold text-gray-800 text-center mb-3">
+                  ⚙️ המנטרה שלו
+                </p>
+                <p className="text-xl text-amber-800 font-bold text-center leading-relaxed">
+                  &ldquo;כל החלומות הופכים למציאות
+                  <br />
+                  עם מספיק עבודה, רצון, וקצת שיגעון.&rdquo;
+                </p>
+              </div>
+              <p className="text-lg text-gray-600 leading-relaxed mb-6">
+                האמונה שלו בי נתנה לי כנפיים. הוא לימד אותי שאין דבר שאי אפשר לבנות —
+                צריך רק לרצות מספיק חזק ולא לפחד להיות קצת משוגע.
+              </p>
+              <p className="text-lg text-gray-600 leading-relaxed">
+                היום, כשגיא מספר לי על החלומות שלו, אני שומע את אבא שלי בתוכי.
+                המשאלה של גיא, הזיכרון של אבא, והאהבה שלי לדברים מטורפים —
+                כל אלה ביחד הם מה שהוביל אותי ליצור את התוכנית הזו.
+              </p>
+            </div>
+          </motion.div>
+
+          {/* Chapter 3 */}
           <motion.div {...fadeIn} className="mb-16">
             <div className="flex items-center gap-3 mb-6">
               <span className="text-3xl">🌍</span>
               <h2 className="text-2xl font-bold text-gray-800">העולם משתנה, הכישורים נשארים</h2>
             </div>
-            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 shadow-sm border border-gray-100">
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
                 אנחנו חיים בעידן של מהפכה. הבינה המלאכותית משנה את הכל —
                 את האופן שבו אנחנו עובדים, יוצרים, ולומדים.
@@ -146,13 +239,13 @@ export default function StoryPage() {
             </div>
           </motion.div>
 
-          {/* Chapter 3 */}
+          {/* Chapter 4 */}
           <motion.div {...fadeIn} className="mb-16">
             <div className="flex items-center gap-3 mb-6">
               <span className="text-3xl">🔨</span>
               <h2 className="text-2xl font-bold text-gray-800">בונים יחד</h2>
             </div>
-            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 shadow-sm border border-gray-100">
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
                 אז יצאתי לדרך. החלטתי לבנות פלטפורמה שתלמד את גיא —
                 ואת כל ילד אחר שרוצה — את הכישור הכי מגניב שיש: לכתוב קוד.
@@ -165,7 +258,7 @@ export default function StoryPage() {
             </div>
           </motion.div>
 
-          {/* Chapter 4 */}
+          {/* Chapter 5 - The Promise */}
           <motion.div {...fadeIn} className="mb-16">
             <div className="flex items-center gap-3 mb-6">
               <span className="text-3xl">✨</span>
@@ -181,6 +274,11 @@ export default function StoryPage() {
               <p className="text-lg leading-relaxed mb-6 text-white/90">
                 הבטחה לכל ילד וילדה שרוצים לגלות את העולם המדהים של התכנות.
               </p>
+              <p className="text-lg leading-relaxed mb-6 text-white/90">
+                אני רוצה לעזור להפוך את החולמים של היום לבונים של מחר.
+                כולנו חייבים את זה לילדים שלנו.
+                ואני חייב את זה לאבא שלי — המעריץ הכי גדול שלי. לנצח.
+              </p>
               <p className="text-xl font-bold leading-relaxed">
                 הבטחה לדור הבא של החולמים והבונים. 🚀
               </p>
@@ -189,7 +287,7 @@ export default function StoryPage() {
 
           {/* Closing */}
           <motion.div {...fadeIn} className="text-center">
-            <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 shadow-sm border border-gray-100">
               <p className="text-lg text-gray-600 leading-relaxed mb-6">
                 זה הסיפור של איך טל וחברו הדיגיטלי Claude בנו הבטחה
                 לגיא ולדור הבא של החולמים והבונים.
