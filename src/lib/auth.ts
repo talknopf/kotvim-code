@@ -22,8 +22,72 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
-    async redirect({ baseUrl }) {
+    async redirect({ url, baseUrl }) {
+      // Allow callbacks on the same origin (needed for OAuth flow)
+      if (url.startsWith(baseUrl)) return url;
+      if (url.startsWith('/')) return `${baseUrl}${url}`;
       return `${baseUrl}/dashboard`;
+    },
+  },
+  // Explicit cookie config to fix OAuth behind reverse proxy (nginx ingress
+  // terminates TLS, so internal traffic is HTTP). Without this, NextAuth
+  // auto-detects HTTPS from NEXTAUTH_URL and uses __Secure- prefixed cookies,
+  // which can break the state/CSRF validation during the OAuth callback.
+  cookies: {
+    sessionToken: {
+      name: 'next-auth.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: true,
+      },
+    },
+    callbackUrl: {
+      name: 'next-auth.callback-url',
+      options: {
+        sameSite: 'lax',
+        path: '/',
+        secure: true,
+      },
+    },
+    csrfToken: {
+      name: 'next-auth.csrf-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: true,
+      },
+    },
+    pkceCodeVerifier: {
+      name: 'next-auth.pkce.code_verifier',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: true,
+        maxAge: 900,
+      },
+    },
+    state: {
+      name: 'next-auth.state',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: true,
+        maxAge: 900,
+      },
+    },
+    nonce: {
+      name: 'next-auth.nonce',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: true,
+      },
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
