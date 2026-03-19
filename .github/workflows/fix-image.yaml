@@ -16,21 +16,21 @@ jobs:
           echo "Current file info:"
           file public/images/tal.jpg
           ls -la public/images/tal.jpg
-          echo "First 20 bytes as hex:"
-          xxd -l 20 public/images/tal.jpg
           echo "---"
-          if file public/images/tal.jpg | grep -q "ASCII\|text"; then
-            echo "File is text (base64), converting to binary..."
-            # Strip any whitespace/newlines and decode
-            tr -d '\n\r\t ' < public/images/tal.jpg | base64 -d > /tmp/tal_binary.jpg
-            echo "Decoded file info:"
-            file /tmp/tal_binary.jpg
-            ls -la /tmp/tal_binary.jpg
-            cp /tmp/tal_binary.jpg public/images/tal.jpg
-            echo "Done!"
-          else
-            echo "File is already binary, no fix needed."
-          fi
+          python3 -c "
+          import base64
+          with open('public/images/tal.jpg', 'r') as f:
+              b64_text = f.read().strip()
+          print(f'Read {len(b64_text)} chars of base64')
+          binary = base64.b64decode(b64_text)
+          print(f'Decoded to {len(binary)} bytes')
+          with open('public/images/tal.jpg', 'wb') as f:
+              f.write(binary)
+          print('Written binary JPEG')
+          "
+          echo "Result:"
+          file public/images/tal.jpg
+          ls -la public/images/tal.jpg
 
       - name: Commit fixed image
         run: |
