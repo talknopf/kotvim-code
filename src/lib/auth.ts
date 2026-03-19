@@ -11,11 +11,20 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
   ],
+  debug: process.env.NODE_ENV !== 'production',
   pages: {
     signIn: '/',
     error: '/',
   },
   callbacks: {
+    async signIn({ user, account, profile }) {
+      console.log('[NextAuth] signIn callback:', {
+        userId: user?.id,
+        provider: account?.provider,
+        email: profile?.email,
+      });
+      return true;
+    },
     async session({ session, user }) {
       if (session.user) {
         session.user.id = user.id;
@@ -27,6 +36,14 @@ export const authOptions: NextAuthOptions = {
       if (url.startsWith(baseUrl)) return url;
       if (url.startsWith('/')) return `${baseUrl}${url}`;
       return `${baseUrl}/dashboard`;
+    },
+  },
+  events: {
+    async signIn({ user }) {
+      console.log('[NextAuth] Sign in event for user:', user?.email);
+    },
+    async error(message) {
+      console.error('[NextAuth] Error event:', message);
     },
   },
   // Explicit cookie config to fix OAuth behind reverse proxy (nginx ingress
