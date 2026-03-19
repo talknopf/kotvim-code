@@ -13,17 +13,23 @@ jobs:
 
       - name: Decode base64 image to binary
         run: |
-          # The current tal.jpg is base64 text, not binary
-          # Decode it to actual JPEG binary
-          if file public/images/tal.jpg | grep -q "ASCII"; then
+          echo "Current file info:"
+          file public/images/tal.jpg
+          ls -la public/images/tal.jpg
+          echo "First 20 bytes as hex:"
+          xxd -l 20 public/images/tal.jpg
+          echo "---"
+          if file public/images/tal.jpg | grep -q "ASCII\|text"; then
             echo "File is text (base64), converting to binary..."
-            base64 -d public/images/tal.jpg > /tmp/tal_binary.jpg
+            # Strip any whitespace/newlines and decode
+            tr -d '\n\r\t ' < public/images/tal.jpg | base64 -d > /tmp/tal_binary.jpg
+            echo "Decoded file info:"
+            file /tmp/tal_binary.jpg
+            ls -la /tmp/tal_binary.jpg
             cp /tmp/tal_binary.jpg public/images/tal.jpg
-            file public/images/tal.jpg
-            echo "Done! File is now binary JPEG."
+            echo "Done!"
           else
             echo "File is already binary, no fix needed."
-            file public/images/tal.jpg
           fi
 
       - name: Commit fixed image
