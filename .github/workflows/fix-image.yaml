@@ -1,0 +1,35 @@
+name: Fix Binary Image
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decode base64 image to binary
+        run: |
+          # The current tal.jpg is base64 text, not binary
+          # Decode it to actual JPEG binary
+          if file public/images/tal.jpg | grep -q "ASCII"; then
+            echo "File is text (base64), converting to binary..."
+            base64 -d public/images/tal.jpg > /tmp/tal_binary.jpg
+            cp /tmp/tal_binary.jpg public/images/tal.jpg
+            file public/images/tal.jpg
+            echo "Done! File is now binary JPEG."
+          else
+            echo "File is already binary, no fix needed."
+            file public/images/tal.jpg
+          fi
+
+      - name: Commit fixed image
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/images/tal.jpg
+          git diff --staged --quiet && echo "No changes" || git commit -m "fix: decode tal.jpg from base64 text to actual JPEG binary"
+          git push
