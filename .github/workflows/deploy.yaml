@@ -94,9 +94,29 @@ jobs:
         run: |
           sed -i "s|<AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/kotvim-code:latest|$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG|g" k8s/deployment.yaml
 
-      - name: Apply Kubernetes manifests
+      - name: Apply Kubernetes manifests (excluding secrets)
         run: |
-          kubectl apply -f k8s/ -n ${{ env.K8S_NAMESPACE }}
+          # Apply everything EXCEPT secrets.yaml to avoid overwriting
+          # real credentials with placeholder values.
+          # Use update-secrets workflow to manage secrets separately.
+          for f in k8s/*.yaml; do
+            if [ "$(basename $f)" != "secrets.yaml" ]; then
+              echo "Applying $f..."
+              kubectl apply -f "$f" -n ${{ env.K8S_NAMESPACE }}
+            else
+              echo "Skipping $f (managed separately via update-secrets workflow)"
+            fi
+          done
+
+      - name: Ensure secrets exist (create only if missing)
+        run: |
+          if ! kubectl get secret kotvim-code-secrets -n ${{ env.K8S_NAMESPACE }} 2>/dev/null; then
+            echo "Secret doesn't exist, creating from template..."
+            kubectl apply -f k8s/secrets.yaml -n ${{ env.K8S_NAMESPACE }}
+            echo "WARNING: Secrets created with placeholder values. Run update-secrets workflow!"
+          else
+            echo "Secrets already exist, not overwriting."
+          fi
 
       - name: Wait for rollout
         run: |
