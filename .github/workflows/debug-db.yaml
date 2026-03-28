@@ -16,7 +16,7 @@ env:
 jobs:
   debug:
     runs-on: ubuntu-latest
-    name: Test DB connectivity from cluster
+    name: Network & DB connectivity diagnostics
 
     steps:
       - name: Configure AWS credentials
@@ -31,182 +31,264 @@ jobs:
             --region ${{ env.AWS_REGION }} \
             --name ${{ env.EKS_CLUSTER_NAME }}
 
-      - name: Get RDS endpoint
+      - name: Get EKS cluster details
+        id: eks
+        run: |
+          CLUSTER_INFO=$(aws eks describe-cluster \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }})
+
+          VPC_ID=$(echo "$CLUSTER_INFO" | jq -r '.cluster.resourcesVpcConfig.vpcId')
+          CLUSTER_SG=$(echo "$CLUSTER_INFO" | jq -r '.cluster.resourcesVpcConfig.clusterSecurityGroupId')
+          SUBNET_IDS=$(echo "$CLUSTER_INFO" | jq -r '.cluster.resourcesVpcConfig.subnetIds | join(" ")')
+          K8S_CIDR=$(echo "$CLUSTER_INFO" | jq -r '.cluster.kubernetesNetworkConfig.serviceIpv4Cidr // "unknown"')
+
+          echo "vpc_id=$VPC_ID" >> $GITHUB_OUTPUT
+          echo "cluster_sg=$CLUSTER_SG" >> $GITHUB_OUTPUT
+          echo "subnet_ids=$SUBNET_IDS" >> $GITHUB_OUTPUT
+
+          echo "## EKS Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "- VPC: \`$VPC_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Cluster SG: \`$CLUSTER_SG\`" >> $GITHUB_STEP_SUMMARY
+          echo "- K8s Service CIDR: \`$K8S_CIDR\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Subnets: \`$SUBNET_IDS\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check ALL VPC CIDRs (primary + secondary)
+        id: vpc
+        run: |
+          VPC_ID="${{ steps.eks.outputs.vpc_id }}"
+
+          echo "## VPC CIDRs" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Vpcs[0].CidrBlockAssociationSet[*].{CIDR:CidrBlock,State:CidrBlockState.State}' \
+            --output table 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # Get primary CIDR
+          PRIMARY_CIDR=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Vpcs[0].CidrBlock' --output text)
+          echo "primary_cidr=$PRIMARY_CIDR" >> $GITHUB_OUTPUT
+
+          # Get ALL CIDRs
+          ALL_CIDRS=$(aws ec2 describe-vpcs --vpc-ids "$VPC_ID" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Vpcs[0].CidrBlockAssociationSet[*].CidrBlock' --output text)
+          echo "all_cidrs=$ALL_CIDRS" >> $GITHUB_OUTPUT
+          echo "All VPC CIDRs: $ALL_CIDRS"
+
+      - name: Get RDS details
         id: rds
         run: |
-          ENDPOINT=$(aws rds describe-db-instances \
+          RDS_INFO=$(aws rds describe-db-instances \
             --db-instance-identifier ${{ env.RDS_IDENTIFIER }} \
             --region ${{ env.AWS_REGION }} \
-            --query 'DBInstances[0].Endpoint.Address' --output text)
-          STATUS=$(aws rds describe-db-instances \
-            --db-instance-identifier ${{ env.RDS_IDENTIFIER }} \
-            --region ${{ env.AWS_REGION }} \
-            --query 'DBInstances[0].DBInstanceStatus' --output text)
+            --query 'DBInstances[0]')
+
+          ENDPOINT=$(echo "$RDS_INFO" | jq -r '.Endpoint.Address')
+          STATUS=$(echo "$RDS_INFO" | jq -r '.DBInstanceStatus')
+          RDS_SG_IDS=$(echo "$RDS_INFO" | jq -r '.VpcSecurityGroups[].VpcSecurityGroupId')
+          RDS_SUBNET_GROUP=$(echo "$RDS_INFO" | jq -r '.DBSubnetGroup.DBSubnetGroupName')
+          RDS_SUBNETS=$(echo "$RDS_INFO" | jq -r '.DBSubnetGroup.Subnets[].SubnetIdentifier')
+          RDS_AZ=$(echo "$RDS_INFO" | jq -r '.AvailabilityZone')
+
           echo "endpoint=$ENDPOINT" >> $GITHUB_OUTPUT
-          echo "## RDS Status" >> $GITHUB_STEP_SUMMARY
+          echo "sg_ids=$RDS_SG_IDS" >> $GITHUB_OUTPUT
+          echo "rds_subnets=$RDS_SUBNETS" >> $GITHUB_OUTPUT
+
+          echo "## RDS Instance" >> $GITHUB_STEP_SUMMARY
           echo "- Endpoint: \`$ENDPOINT\`" >> $GITHUB_STEP_SUMMARY
           echo "- Status: \`$STATUS\`" >> $GITHUB_STEP_SUMMARY
+          echo "- AZ: \`$RDS_AZ\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Security Groups: \`$RDS_SG_IDS\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Subnet Group: \`$RDS_SUBNET_GROUP\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Subnets: \`$(echo $RDS_SUBNETS | tr '\n' ' ')\`" >> $GITHUB_STEP_SUMMARY
 
-      - name: Check pod status
+      - name: Check RDS Security Group rules (CRITICAL)
         run: |
-          echo "## Pod Status" >> $GITHUB_STEP_SUMMARY
+          echo "## RDS Security Group Rules" >> $GITHUB_STEP_SUMMARY
+          for SG_ID in ${{ steps.rds.outputs.sg_ids }}; do
+            echo "### SG: $SG_ID" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            aws ec2 describe-security-groups --group-ids "$SG_ID" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'SecurityGroups[0].IpPermissions' \
+              --output json 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Check EKS node security groups (outbound rules)
+        run: |
+          VPC_ID="${{ steps.eks.outputs.vpc_id }}"
+          CLUSTER_SG="${{ steps.eks.outputs.cluster_sg }}"
+
+          echo "## EKS Cluster SG Outbound Rules ($CLUSTER_SG)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          aws ec2 describe-security-groups --group-ids "$CLUSTER_SG" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'SecurityGroups[0].IpPermissionsEgress' \
+            --output json 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # Also check node-specific SGs
+          echo "## All SGs in VPC with 'eks' or 'node' in name" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          aws ec2 describe-security-groups \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'SecurityGroups[*].{ID:GroupId,Name:GroupName}' \
+            --output table 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Check pod IPs vs VPC CIDRs
+        run: |
+          echo "## Pod IPs" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           kubectl get pods -n ${{ env.K8S_NAMESPACE }} -o wide 2>&1 | tee -a $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Check K8s secret keys
-        run: |
-          echo "## Secret Keys" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          kubectl get secret kotvim-code-secrets -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.data}' | python3 -c "
-          import sys, json, base64
-          data = json.loads(sys.stdin.read())
-          for k, v in sorted(data.items()):
-              decoded = base64.b64decode(v).decode()
-              if k == 'DATABASE_URL':
-                  parts = decoded.split('@')
-                  if len(parts) == 2:
-                      user_pass = parts[0].split(':')
-                      if len(user_pass) >= 2:
-                          print(f'{k} = {user_pass[0]}:****@{parts[1]}')
-                      else:
-                          print(f'{k} = (malformed)')
-                  else:
-                      print(f'{k} = (unexpected format, parts={len(parts)})')
-              elif 'SECRET' in k or 'PASSWORD' in k:
-                  print(f'{k} = SET (length={len(decoded)})')
-              else:
-                  print(f'{k} = {decoded[:80]}')
-          " 2>&1 | tee -a $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-      - name: Test DB connection via K8s Job (results in ConfigMap)
-        run: |
-          kubectl delete job db-test-job -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
-          kubectl delete configmap db-test-result -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
-
-          # Pre-create an empty configmap so the Job can patch it
-          kubectl create configmap db-test-result -n ${{ env.K8S_NAMESPACE }} --from-literal=result="pending"
-
-          cat <<'JOBEOF' | kubectl apply -n ${{ env.K8S_NAMESPACE }} -f -
-          apiVersion: batch/v1
-          kind: Job
-          metadata:
-            name: db-test-job
-          spec:
-            ttlSecondsAfterFinished: 300
-            backoffLimit: 0
-            template:
-              spec:
-                restartPolicy: Never
-                containers:
-                  - name: test
-                    image: node:20-slim
-                    command:
-                      - /bin/bash
-                      - -c
-                      - |
-                        apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1
-
-                        OUTPUT=""
-                        log() { OUTPUT="${OUTPUT}${1}\n"; echo "$1"; }
-
-                        log "=== DATABASE_URL structure ==="
-                        log "$(echo "$DATABASE_URL" | sed 's/:\/\/[^:]*:[^@]*@/:\/\/***:***@/')"
-                        log ""
-
-                        log "=== Installing pg ==="
-                        INSTALL_OUT=$(npm install pg --no-save 2>&1 | tail -3)
-                        log "$INSTALL_OUT"
-                        log ""
-
-                        log "=== Test 1: pg connection with original URL ==="
-                        T1=$(node -e "
-                        const { Pool } = require('pg');
-                        const pool = new Pool({
-                          connectionString: process.env.DATABASE_URL,
-                          connectionTimeoutMillis: 10000
-                        });
-                        pool.query('SELECT NOW() as now, current_database() as db, current_user as usr')
-                          .then(r => { console.log('SUCCESS: ' + JSON.stringify(r.rows[0])); return pool.end(); })
-                          .catch(e => { console.log('FAILED: ' + e.message); return pool.end(); });
-                        " 2>&1 || echo "node exited with error")
-                        log "$T1"
-                        log ""
-
-                        log "=== Test 2: pg without ?schema=public ==="
-                        CLEAN_URL=$(echo "$DATABASE_URL" | sed 's/\?schema=public//')
-                        T2=$(CLEAN_DB_URL="$CLEAN_URL" node -e "
-                        const { Pool } = require('pg');
-                        const pool = new Pool({
-                          connectionString: process.env.CLEAN_DB_URL,
-                          connectionTimeoutMillis: 10000
-                        });
-                        pool.query('SELECT NOW() as now, current_database() as db')
-                          .then(r => { console.log('SUCCESS: ' + JSON.stringify(r.rows[0])); return pool.end(); })
-                          .catch(e => { console.log('FAILED: ' + e.message); return pool.end(); });
-                        " 2>&1 || echo "node exited with error")
-                        log "$T2"
-                        log ""
-
-                        log "=== Test 3: List tables ==="
-                        T3=$(node -e "
-                        const { Pool } = require('pg');
-                        const pool = new Pool({
-                          connectionString: process.env.DATABASE_URL,
-                          connectionTimeoutMillis: 10000
-                        });
-                        pool.query(\"SELECT tablename FROM pg_tables WHERE schemaname='public'\")
-                          .then(r => { console.log('Tables: ' + r.rows.map(r=>r.tablename).join(', ')); return pool.end(); })
-                          .catch(e => { console.log('FAILED: ' + e.message); return pool.end(); });
-                        " 2>&1 || echo "node exited with error")
-                        log "$T3"
-                        log ""
-                        log "=== All tests complete ==="
-
-                        # Write results to ConfigMap via K8s API
-                        TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-                        NS=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
-                        CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-
-                        ENCODED=$(printf '%s' "$OUTPUT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo '"encoding-failed"')
-
-                        PATCH_RESULT=$(curl -s -o /dev/null -w '%{http_code}' --cacert $CA \
-                          -X PATCH \
-                          -H "Authorization: Bearer $TOKEN" \
-                          -H "Content-Type: application/merge-patch+json" \
-                          "https://kubernetes.default.svc/api/v1/namespaces/$NS/configmaps/db-test-result" \
-                          -d "{\"data\":{\"result\":$ENCODED}}")
-
-                        echo "ConfigMap patch HTTP status: $PATCH_RESULT"
-                        if [ "$PATCH_RESULT" != "200" ]; then
-                          echo "Failed to write ConfigMap, trying fallback..."
-                          # Write to a file that we can check
-                          echo "$OUTPUT" > /tmp/result.txt
-                          cat /tmp/result.txt
-                        fi
-                    env:
-                      - name: DATABASE_URL
-                        valueFrom:
-                          secretKeyRef:
-                            name: kotvim-code-secrets
-                            key: DATABASE_URL
-          JOBEOF
-
-          echo "Waiting for Job to complete (max 120s)..."
-          kubectl wait --for=condition=complete job/db-test-job \
-            -n ${{ env.K8S_NAMESPACE }} --timeout=120s || {
-            echo "Job did not complete in time or failed"
-            kubectl describe job db-test-job -n ${{ env.K8S_NAMESPACE }} 2>/dev/null | tail -20 || true
-          }
-
-          echo ""
-          echo "## DB Connection Test Results" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          kubectl get configmap db-test-result -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.data.result}' 2>&1 | tee -a $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pod IPs vs VPC CIDRs" >> $GITHUB_STEP_SUMMARY
+
+          POD_IPS=$(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.items[*].status.podIP}')
+          NODE_IPS=$(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.items[*].status.hostIP}')
+          echo "- Pod IPs: \`$POD_IPS\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Node IPs: \`$NODE_IPS\`" >> $GITHUB_STEP_SUMMARY
+          echo "- VPC CIDRs: \`${{ steps.vpc.outputs.all_cidrs }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Primary VPC CIDR: \`${{ steps.vpc.outputs.primary_cidr }}\`" >> $GITHUB_STEP_SUMMARY
+
+          # Check if pod IPs fall within any VPC CIDR
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Analysis**: If pod IPs are NOT in any VPC CIDR, the SG rule allowing VPC CIDR won't match pod traffic." >> $GITHUB_STEP_SUMMARY
+
+          # Check node SGs too
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Node Security Groups" >> $GITHUB_STEP_SUMMARY
+          for NODE in $(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.items[*].spec.nodeName}' | tr ' ' '\n' | sort -u); do
+            INSTANCE_ID=$(kubectl get node "$NODE" -o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+            echo "- Node \`$NODE\` → Instance \`$INSTANCE_ID\`" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "" ]; then
+              NODE_SGS=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'Reservations[0].Instances[0].SecurityGroups[*].{ID:GroupId,Name:GroupName}' \
+                --output json 2>/dev/null || echo "could not describe instance")
+              echo "  SGs: \`$NODE_SGS\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Check NACLs on RDS subnets
+        run: |
+          echo "## Network ACLs on RDS Subnets" >> $GITHUB_STEP_SUMMARY
+          for SUBNET in ${{ steps.rds.outputs.rds_subnets }}; do
+            NACL_ID=$(aws ec2 describe-network-acls \
+              --filters "Name=association.subnet-id,Values=$SUBNET" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'NetworkAcls[0].NetworkAclId' --output text 2>/dev/null)
+            echo "### Subnet $SUBNET → NACL $NACL_ID" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            aws ec2 describe-network-acls --network-acl-ids "$NACL_ID" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'NetworkAcls[0].Entries' \
+              --output json 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Check route tables for RDS subnets
+        run: |
+          echo "## Route Tables for RDS Subnets" >> $GITHUB_STEP_SUMMARY
+          for SUBNET in ${{ steps.rds.outputs.rds_subnets }}; do
+            RT_ID=$(aws ec2 describe-route-tables \
+              --filters "Name=association.subnet-id,Values=$SUBNET" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null)
+            if [ "$RT_ID" = "None" ] || [ -z "$RT_ID" ]; then
+              RT_ID="(using VPC main route table)"
+            fi
+            echo "### Subnet $SUBNET → RT $RT_ID" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            if [ "$RT_ID" != "(using VPC main route table)" ]; then
+              aws ec2 describe-route-tables --route-table-ids "$RT_ID" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'RouteTables[0].Routes' \
+                --output json 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+            else
+              # Get main route table
+              VPC_ID="${{ steps.eks.outputs.vpc_id }}"
+              aws ec2 describe-route-tables \
+                --filters "Name=vpc-id,Values=$VPC_ID" "Name=association.main,Values=true" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'RouteTables[0].Routes' \
+                --output json 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+            fi
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Check K8s NetworkPolicies
+        run: |
+          echo "## Kubernetes NetworkPolicies" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get networkpolicies -n ${{ env.K8S_NAMESPACE }} -o yaml 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cluster-wide NetworkPolicies" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get networkpolicies -A 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: DNS resolution test from pod
+        run: |
+          RDS_HOST="${{ steps.rds.outputs.endpoint }}"
+          echo "## DNS + TCP test from inside cluster" >> $GITHUB_STEP_SUMMARY
+
+          # Run a quick pod to test DNS and TCP connectivity
+          kubectl delete pod net-debug -n ${{ env.K8S_NAMESPACE }} --ignore-not-found 2>/dev/null
+          kubectl run net-debug -n ${{ env.K8S_NAMESPACE }} \
+            --image=busybox:1.36 \
+            --restart=Never \
+            --command -- sleep 60
+
+          echo "Waiting for net-debug pod to be ready..."
+          kubectl wait --for=condition=Ready pod/net-debug \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=30s
+
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # DNS resolution
+          echo "=== DNS Resolution ===" | tee -a $GITHUB_STEP_SUMMARY
+          kubectl exec net-debug -n ${{ env.K8S_NAMESPACE }} -- \
+            nslookup "$RDS_HOST" 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+
+          echo "" | tee -a $GITHUB_STEP_SUMMARY
+
+          # TCP connectivity test with timeout
+          echo "=== TCP Connect to $RDS_HOST:5432 (5s timeout) ===" | tee -a $GITHUB_STEP_SUMMARY
+          kubectl exec net-debug -n ${{ env.K8S_NAMESPACE }} -- \
+            sh -c "nc -z -w 5 $RDS_HOST 5432 && echo 'TCP CONNECT SUCCESS' || echo 'TCP CONNECT FAILED'" \
+            2>&1 | tee -a $GITHUB_STEP_SUMMARY
+
+          echo "" | tee -a $GITHUB_STEP_SUMMARY
+
+          # Check what IP the pod has
+          echo "=== Pod network info ===" | tee -a $GITHUB_STEP_SUMMARY
+          kubectl exec net-debug -n ${{ env.K8S_NAMESPACE }} -- \
+            sh -c "ip addr show 2>/dev/null || ifconfig 2>/dev/null || echo 'no ip tools'" \
+            2>&1 | tee -a $GITHUB_STEP_SUMMARY
+
           echo '```' >> $GITHUB_STEP_SUMMARY
 
           # Cleanup
-          kubectl delete job db-test-job -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
-          kubectl delete configmap db-test-result -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          kubectl delete pod net-debug -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+
+      - name: Final summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Diagnostic Checklist" >> $GITHUB_STEP_SUMMARY
+          echo "1. Are pod IPs within VPC CIDRs? (if not, SG CIDR rule won't work)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Does RDS SG allow traffic from node SGs? (check source SG references)" >> $GITHUB_STEP_SUMMARY
+          echo "3. Are NACLs blocking port 5432? (check both inbound AND outbound)" >> $GITHUB_STEP_SUMMARY
+          echo "4. Do route tables have routes for pod CIDR ranges?" >> $GITHUB_STEP_SUMMARY
+          echo "5. Any K8s NetworkPolicies restricting egress?" >> $GITHUB_STEP_SUMMARY
+          echo "6. Does nc TCP test succeed from a debug pod?" >> $GITHUB_STEP_SUMMARY
