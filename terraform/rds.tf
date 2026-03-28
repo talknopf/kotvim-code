@@ -8,14 +8,14 @@ data "aws_eks_cluster" "main" {
   name = var.eks_cluster_name
 }
 
-data "aws_vpc" "eks" {
-  id = data.aws_eks_cluster.main.vpc_config[0].vpc_id
+locals {
+  vpc_id = data.aws_eks_cluster.main.vpc_config[0].vpc_id
 }
 
 data "aws_subnets" "eks_private" {
   filter {
     name   = "vpc-id"
-    values = [data.aws_vpc.eks.id]
+    values = [local.vpc_id]
   }
 
   tags = {
@@ -44,7 +44,7 @@ resource "aws_db_subnet_group" "kotvim" {
 resource "aws_security_group" "rds" {
   name        = "kotvim-code-rds-sg"
   description = "Allow PostgreSQL from EKS cluster"
-  vpc_id      = data.aws_vpc.eks.id
+  vpc_id      = local.vpc_id
 
   ingress {
     description     = "PostgreSQL from EKS cluster SG"
@@ -55,11 +55,11 @@ resource "aws_security_group" "rds" {
   }
 
   ingress {
-    description = "PostgreSQL from VPC CIDR"
+    description = "PostgreSQL from private RFC1918 ranges"
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = [data.aws_vpc.eks.cidr_block]
+    cidr_blocks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
   }
 
   egress {
@@ -77,8 +77,8 @@ resource "aws_security_group" "rds" {
 # ---------- random password ----------
 
 resource "random_password" "rds" {
-  length           = 25
-  special          = false   # keep URL-safe
+  length  = 25
+  special = false   # keep URL-safe
 }
 
 # ---------- RDS instance ----------
