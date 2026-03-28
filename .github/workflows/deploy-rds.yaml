@@ -11,13 +11,14 @@ env:
   AWS_REGION: eu-west-1
   EKS_CLUSTER_NAME: pressto-prod
   K8S_NAMESPACE: kotvim-code
-  TF_VAR_region: eu-west-1
-  TF_VAR_eks_cluster_name: pressto-prod
+  RDS_IDENTIFIER: kotvim-code-db
+  RDS_DB_NAME: kotvim_code
+  RDS_USERNAME: kotvim
 
 jobs:
   deploy-rds:
     runs-on: ubuntu-latest
-    name: Terraform Apply → K8s Secrets → Prisma Migrate
+    name: Wire RDS → K8s Secrets → Prisma Migrate
 
     steps:
       - name: Checkout code
@@ -29,51 +30,64 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.9"
-          terraform_wrapper: false
-
-      # ── Terraform ────────────────────────────────────
-      - name: Terraform Init
-        working-directory: terraform
-        run: terraform init -upgrade
-
-      - name: Terraform Plan
-        working-directory: terraform
-        run: terraform plan -target=aws_db_instance.kotvim -target=random_password.rds -out=tfplan
-
-      - name: Terraform Apply
-        working-directory: terraform
-        run: terraform apply -auto-approve tfplan
-
-      - name: Get Terraform Outputs
-        id: tf
-        working-directory: terraform
+      # ── Get RDS info ─────────────────────────────────
+      - name: Get RDS endpoint
+        id: rds
         run: |
-          RDS_ENDPOINT=$(terraform output -raw rds_address)
-          DATABASE_URL=$(terraform output -raw database_url)
-          echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
-          echo "::add-mask::$DATABASE_URL"
-          echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
+          ENDPOINT=$(aws rds describe-db-instances \
+            --db-instance-identifier ${{ env.RDS_IDENTIFIER }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[0].Endpoint.Address' --output text)
+          STATUS=$(aws rds describe-db-instances \
+            --db-instance-identifier ${{ env.RDS_IDENTIFIER }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[0].DBInstanceStatus' --output text)
 
-      # ── Wait for RDS ─────────────────────────────────
+          echo "endpoint=$ENDPOINT" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "RDS endpoint: $ENDPOINT (status: $STATUS)"
+
       - name: Wait for RDS to be available
         run: |
-          echo "Waiting for RDS instance to become available..."
+          echo "Waiting for RDS to be available..."
           aws rds wait db-instance-available \
-            --db-instance-identifier kotvim-code-db \
+            --db-instance-identifier ${{ env.RDS_IDENTIFIER }} \
             --region ${{ env.AWS_REGION }}
-          echo "RDS is ready: ${{ steps.tf.outputs.rds_endpoint }}"
+          echo "RDS is available"
 
-      # ── Upload state for safekeeping ─────────────────
-      - name: Upload Terraform State
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-state
-          path: terraform/terraform.tfstate
-          retention-days: 90
+      # ── Reset master password ────────────────────────
+      - name: Generate new RDS password
+        id: pass
+        run: |
+          PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+          echo "::add-mask::$PASSWORD"
+          echo "password=$PASSWORD" >> $GITHUB_OUTPUT
+
+      - name: Reset RDS master password
+        run: |
+          aws rds modify-db-instance \
+            --db-instance-identifier ${{ env.RDS_IDENTIFIER }} \
+            --master-user-password "${{ steps.pass.outputs.password }}" \
+            --apply-immediately \
+            --region ${{ env.AWS_REGION }}
+          echo "Master password reset requested"
+
+      - name: Wait for password change to apply
+        run: |
+          echo "Waiting for password modification..."
+          sleep 15
+          aws rds wait db-instance-available \
+            --db-instance-identifier ${{ env.RDS_IDENTIFIER }} \
+            --region ${{ env.AWS_REGION }}
+          echo "Password change applied"
+
+      # ── Build DATABASE_URL ───────────────────────────
+      - name: Build DATABASE_URL
+        id: db
+        run: |
+          DATABASE_URL="postgresql://${{ env.RDS_USERNAME }}:${{ steps.pass.outputs.password }}@${{ steps.rds.outputs.endpoint }}:5432/${{ env.RDS_DB_NAME }}?schema=public"
+          echo "::add-mask::$DATABASE_URL"
+          echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
 
       # ── Update K8s Secrets ───────────────────────────
       - name: Update kubeconfig
@@ -93,14 +107,14 @@ jobs:
         run: |
           kubectl create secret generic kotvim-code-secrets \
             --namespace ${{ env.K8S_NAMESPACE }} \
-            --from-literal=DATABASE_URL="${{ steps.tf.outputs.database_url }}" \
+            --from-literal=DATABASE_URL="${{ steps.db.outputs.database_url }}" \
             --from-literal=NEXTAUTH_SECRET="${{ steps.nextauth.outputs.secret }}" \
             --from-literal=NEXTAUTH_URL="https://kotvim-code.luposec.io" \
             --from-literal=GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
             --from-literal=GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          echo "K8s secret updated in namespace ${{ env.K8S_NAMESPACE }}"
+          echo "K8s secret updated"
 
       # ── Prisma Migrations ────────────────────────────
       - name: Setup Node.js
@@ -113,7 +127,7 @@ jobs:
 
       - name: Run Prisma DB Push
         env:
-          DATABASE_URL: ${{ steps.tf.outputs.database_url }}
+          DATABASE_URL: ${{ steps.db.outputs.database_url }}
         run: |
           npx prisma db push --accept-data-loss --skip-generate
           echo "Database schema pushed"
@@ -123,7 +137,7 @@ jobs:
         run: |
           kubectl -n ${{ env.K8S_NAMESPACE }} rollout restart deployment kotvim-code
           kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deployment kotvim-code --timeout=120s
-          echo "Deployment restarted and healthy"
+          echo "Deployment restarted"
 
       # ── Summary ──────────────────────────────────────
       - name: Job Summary
@@ -132,15 +146,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **RDS Endpoint** | \`${{ steps.tf.outputs.rds_endpoint }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Instance** | \`db.t4g.micro\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Engine** | PostgreSQL 16 |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Database** | \`kotvim_code\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **RDS Endpoint** | \`${{ steps.rds.outputs.endpoint }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Database** | \`${{ env.RDS_DB_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **K8s Secret** | \`kotvim-code-secrets\` updated |" >> $GITHUB_STEP_SUMMARY
           echo "| **Prisma** | Schema pushed |" >> $GITHUB_STEP_SUMMARY
           echo "| **Deployment** | Restarted |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
           echo "1. Verify auth at https://kotvim-code.luposec.io" >> $GITHUB_STEP_SUMMARY
-          echo "2. Rotate Google OAuth client secret (it was leaked in logs)" >> $GITHUB_STEP_SUMMARY
-          echo "3. Download the \`terraform-state\` artifact and commit it to the repo" >> $GITHUB_STEP_SUMMARY
+          echo "2. Rotate Google OAuth client secret (leaked in previous logs)" >> $GITHUB_STEP_SUMMARY
