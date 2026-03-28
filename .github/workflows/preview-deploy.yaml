@@ -1,0 +1,242 @@
+name: Preview Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - master
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  AWS_REGION: eu-west-1
+  EKS_CLUSTER_NAME: pressto-prod
+  ECR_REPOSITORY: kotvim-code
+  BASE_DOMAIN: kotvim-code.luposec.io
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    name: Deploy PR Preview
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set preview variables
+        id: vars
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          PREVIEW_NS="kotvim-code-pr-${PR_NUMBER}"
+          PREVIEW_HOST="pr-${PR_NUMBER}.${{ env.BASE_DOMAIN }}"
+          IMAGE_TAG="pr-${PR_NUMBER}-${{ github.sha }}"
+          echo "pr_number=${PR_NUMBER}" >> $GITHUB_OUTPUT
+          echo "namespace=${PREVIEW_NS}" >> $GITHUB_OUTPUT
+          echo "host=${PREVIEW_HOST}" >> $GITHUB_OUTPUT
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "url=https://${PREVIEW_HOST}" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+        run: |
+          docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Create preview namespace
+        env:
+          NAMESPACE: ${{ steps.vars.outputs.namespace }}
+        run: |
+          kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace $NAMESPACE app=kotvim-code preview=true pr=${{ steps.vars.outputs.pr_number }} --overwrite
+
+      - name: Copy production secrets to preview namespace
+        env:
+          NAMESPACE: ${{ steps.vars.outputs.namespace }}
+        run: |
+          # Copy secrets from production namespace to preview namespace
+          # This shares the same DB and Google OAuth credentials
+          if kubectl get secret kotvim-code-secrets -n kotvim-code -o yaml 2>/dev/null; then
+            kubectl get secret kotvim-code-secrets -n kotvim-code -o yaml \
+              | sed "s/namespace: kotvim-code/namespace: $NAMESPACE/" \
+              | kubectl apply -f -
+            echo "Copied production secrets to preview namespace"
+          else
+            echo "WARNING: Production secrets not found. Preview may not work correctly."
+          fi
+
+      - name: Deploy preview environment
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+          NAMESPACE: ${{ steps.vars.outputs.namespace }}
+          PREVIEW_HOST: ${{ steps.vars.outputs.host }}
+          PREVIEW_URL: ${{ steps.vars.outputs.url }}
+          PR_NUMBER: ${{ steps.vars.outputs.pr_number }}
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: kotvim-code-preview
+            namespace: ${NAMESPACE}
+            labels:
+              app: kotvim-code
+              preview: "true"
+              pr: "${PR_NUMBER}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: kotvim-code-preview
+            template:
+              metadata:
+                labels:
+                  app: kotvim-code-preview
+              spec:
+                containers:
+                  - name: kotvim-code
+                    image: ${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}
+                    ports:
+                      - containerPort: 3000
+                    envFrom:
+                      - secretRef:
+                          name: kotvim-code-secrets
+                    env:
+                      - name: NODE_ENV
+                        value: "production"
+                      - name: NEXTAUTH_URL
+                        value: "${PREVIEW_URL}"
+                    resources:
+                      requests:
+                        cpu: 50m
+                        memory: 128Mi
+                      limits:
+                        cpu: 250m
+                        memory: 256Mi
+                    readinessProbe:
+                      httpGet:
+                        path: /api/auth/session
+                        port: 3000
+                      initialDelaySeconds: 5
+                      periodSeconds: 10
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: kotvim-code-preview
+            namespace: ${NAMESPACE}
+            labels:
+              app: kotvim-code
+              preview: "true"
+          spec:
+            type: ClusterIP
+            ports:
+              - port: 80
+                targetPort: 3000
+            selector:
+              app: kotvim-code-preview
+          ---
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: kotvim-code-preview
+            namespace: ${NAMESPACE}
+            labels:
+              app: kotvim-code
+              preview: "true"
+            annotations:
+              kubernetes.io/ingress.class: nginx
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          spec:
+            tls:
+              - hosts:
+                  - ${PREVIEW_HOST}
+                secretName: kotvim-code-preview-tls
+            rules:
+              - host: ${PREVIEW_HOST}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: kotvim-code-preview
+                          port:
+                            number: 80
+          EOF
+
+      - name: Wait for rollout
+        env:
+          NAMESPACE: ${{ steps.vars.outputs.namespace }}
+        run: |
+          kubectl rollout status deployment/kotvim-code-preview \
+            -n $NAMESPACE --timeout=5m
+
+      - name: Comment on PR with preview URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const previewUrl = '${{ steps.vars.outputs.url }}';
+            const prNumber = ${{ steps.vars.outputs.pr_number }};
+            const sha = '${{ github.sha }}'.substring(0, 7);
+
+            // Find existing preview comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Preview Environment')
+            );
+
+            const body = [
+              '## 🚀 Preview Environment',
+              '',
+              `| | |`,
+              `|---|---|`,
+              `| **URL** | [${previewUrl}](${previewUrl}) |`,
+              `| **Commit** | \`${sha}\` |`,
+              `| **Status** | ✅ Deployed |`,
+              '',
+              '> **Note:** Google OAuth may not work in previews unless the redirect URI is added to the Google Cloud Console.',
+              '> The preview shares the production database — lesson data and user sessions are live.',
+            ].join('\n');
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
