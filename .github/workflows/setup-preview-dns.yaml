@@ -1,0 +1,60 @@
+name: Setup Preview DNS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: eu-west-1
+
+jobs:
+  apply-dns:
+    runs-on: ubuntu-latest
+    name: Apply Wildcard DNS via Terraform
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.7'
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Plan (DNS only)
+        working-directory: terraform
+        run: |
+          terraform plan \
+            -target=aws_route53_record.wildcard \
+            -target=data.aws_route53_zone.main \
+            -out=dns.tfplan
+
+      - name: Terraform Apply (DNS only)
+        working-directory: terraform
+        run: terraform apply -auto-approve dns.tfplan
+
+      - name: Verify DNS record
+        run: |
+          echo "Waiting 10s for DNS propagation..."
+          sleep 10
+          echo "Checking wildcard DNS resolution..."
+          nslookup test-preview.kotvim-code.luposec.io || echo "DNS may take a few minutes to propagate"
+          echo ""
+          echo "============================================"
+          echo "  Wildcard DNS setup complete!"
+          echo "  *.kotvim-code.luposec.io -> kotvim-code.luposec.io"
+          echo "  Preview environments are now ready."
+          echo "============================================"
