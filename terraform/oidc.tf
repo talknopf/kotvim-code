@@ -23,7 +23,7 @@ data "aws_iam_policy_document" "github_assume_role" {
       identifiers = [aws_iam_openid_connect_provider.github.arn]
     }
 
-    action = "sts:AssumeRoleWithWebIdentity"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
 
     condition {
       test     = "StringEquals"
@@ -252,6 +252,7 @@ data "aws_iam_policy_document" "route53_access" {
       "route53:ListHostedZonesByName",
       "route53:ChangeResourceRecordSets",
       "route53:ListResourceRecordSets",
+      "route53:ListTagsForResource",
       "route53:GetChange",
     ]
 

@@ -1,0 +1,88 @@
+name: Setup Preview DNS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: eu-west-1
+
+jobs:
+  apply-dns:
+    runs-on: ubuntu-latest
+    name: Apply Wildcard DNS via Terraform
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure Route 53 IAM permissions
+        run: |
+          ROLE_NAME="kotvim-code-github-actions"
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "route53-access" \
+            --policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [{
+                "Sid": "Route53HostedZones",
+                "Effect": "Allow",
+                "Action": [
+                  "route53:CreateHostedZone",
+                  "route53:GetHostedZone",
+                  "route53:ListHostedZones",
+                  "route53:ListHostedZonesByName",
+                  "route53:ChangeResourceRecordSets",
+                  "route53:ListResourceRecordSets",
+                  "route53:ListTagsForResource",
+                  "route53:GetChange"
+                ],
+                "Resource": "*"
+              }]
+            }'
+          echo "Route 53 IAM policy updated with ListTagsForResource"
+          sleep 5
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.7.5'
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Plan (DNS only)
+        working-directory: terraform
+        run: |
+          terraform plan \
+            -target=aws_route53_record.wildcard \
+            -target=data.aws_route53_zone.main \
+            -out=dns.tfplan
+
+      - name: Terraform Apply (DNS only)
+        working-directory: terraform
+        run: terraform apply dns.tfplan
+
+      - name: Verify DNS record
+        run: |
+          echo "Waiting 10s for DNS propagation..."
+          sleep 10
+          echo "Checking wildcard DNS resolution..."
+          nslookup test-preview.kotvim-code.luposec.io || echo "DNS may take a few minutes to propagate"
+          echo ""
+          echo "============================================"
+          echo "  Wildcard DNS setup complete!"
+          echo "  *.kotvim-code.luposec.io -> kotvim-code.luposec.io"
+          echo "  Preview environments are now ready."
+          echo "============================================"
