@@ -38,6 +38,12 @@ export default function Navbar() {
               <div className="w-24 h-10 bg-gray-100 rounded-full animate-pulse" />
             ) : session ? (
               <div className="flex items-center gap-3">
+                <a
+                  href="/dashboard"
+                  className="text-sm font-medium text-kid-purple hover:text-kid-blue transition-colors"
+                >
+                  הפרופיל שלי
+                </a>
                 <span className="text-sm text-gray-600">
                   שלום, {session.user?.name?.split(' ')[0]}! 👋
                 </span>
@@ -52,7 +58,7 @@ export default function Navbar() {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => signIn('google')}
+                onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
                 className="flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-kid-purple rounded-full text-kid-purple font-semibold text-sm hover:bg-kid-purple hover:text-white transition-all duration-300 shadow-sm hover:shadow-md"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">

@@ -43,7 +43,11 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async redirect({ url, baseUrl }) {
-      // Allow callbacks on the same origin (needed for OAuth flow)
+      // After sign-in, always go to dashboard (not back to the landing page)
+      if (url === baseUrl || url === `${baseUrl}/` || url === '/') {
+        return `${baseUrl}/dashboard`;
+      }
+      // Allow callbacks on the same origin
       if (url.startsWith(baseUrl)) return url;
       if (url.startsWith('/')) return `${baseUrl}${url}`;
       return `${baseUrl}/dashboard`;
