@@ -116,19 +116,56 @@ jobs:
 
           echo "K8s secret updated"
 
-      # ── Prisma Migrations ────────────────────────────
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install Prisma CLI
-        run: npm install prisma@latest --no-save
-
-      - name: Run Prisma DB Push
+      # ── Prisma DB Push (runs inside EKS cluster) ─────
+      - name: Run Prisma DB Push via K8s Job
         run: |
-          npx prisma db push --accept-data-loss --url "${{ steps.db.outputs.database_url }}"
-          echo "Database schema pushed"
+          # Create a one-off K8s job that clones the repo, installs prisma, and pushes schema
+          cat <<'JOBEOF' | kubectl apply -n ${{ env.K8S_NAMESPACE }} -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: prisma-db-push
+            labels:
+              app: prisma-migration
+          spec:
+            ttlSecondsAfterFinished: 300
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: prisma
+                    image: node:20-slim
+                    command:
+                      - /bin/bash
+                      - -c
+                      - |
+                        apt-get update && apt-get install -y git openssl ca-certificates
+                        git clone --depth 1 https://github.com/talknopf/kotvim-code.git /app
+                        cd /app
+                        npm install prisma@latest --no-save
+                        npx prisma db push --accept-data-loss --url "$DATABASE_URL"
+                        echo "Prisma DB Push completed successfully"
+                    env:
+                      - name: DATABASE_URL
+                        valueFrom:
+                          secretKeyRef:
+                            name: kotvim-code-secrets
+                            key: DATABASE_URL
+          JOBEOF
+
+          echo "Waiting for Prisma DB Push job to complete..."
+          kubectl wait --for=condition=complete job/prisma-db-push \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=180s || {
+            echo "Job failed or timed out. Fetching logs..."
+            kubectl logs job/prisma-db-push -n ${{ env.K8S_NAMESPACE }} --tail=50
+            kubectl delete job prisma-db-push -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+            exit 1
+          }
+
+          echo "Prisma DB Push succeeded"
+          kubectl logs job/prisma-db-push -n ${{ env.K8S_NAMESPACE }} --tail=20
+          kubectl delete job prisma-db-push -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
 
       # ── Restart Deployment ───────────────────────────
       - name: Restart deployment
