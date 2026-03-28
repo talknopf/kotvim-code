@@ -33,16 +33,13 @@ export const authOptions: NextAuthOptions = {
         : {}),
     }),
   ],
-  debug: true,
+  debug: false,
   logger: {
     error(code, metadata) {
       console.error('[NextAuth Error]', code, JSON.stringify(metadata, null, 2));
     },
     warn(code) {
       console.warn('[NextAuth Warn]', code);
-    },
-    debug(code, metadata) {
-      console.log('[NextAuth Debug]', code, JSON.stringify(metadata, null, 2));
     },
   },
   pages: {
