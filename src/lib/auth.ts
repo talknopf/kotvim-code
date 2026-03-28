@@ -3,12 +3,34 @@ import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import { prisma } from './prisma';
 
+// When set, OAuth callbacks are routed through this base URL (production)
+// so only one redirect URI needs to be registered in Google Cloud Console.
+const callbackBaseUrl = process.env.AUTH_CALLBACK_BASE_URL || process.env.NEXTAUTH_URL;
+
+// When set, cookies are scoped to this domain so sessions are shared
+// across subdomains (e.g. production + preview environments).
+const cookieDomain = process.env.AUTH_COOKIE_DOMAIN || undefined;
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      ...(callbackBaseUrl && callbackBaseUrl !== process.env.NEXTAUTH_URL
+        ? {
+            authorization: {
+              params: {
+                redirect_uri: `${callbackBaseUrl}/api/auth/callback/google`,
+              },
+            },
+            token: {
+              params: {
+                redirect_uri: `${callbackBaseUrl}/api/auth/callback/google`,
+              },
+            },
+          }
+        : {}),
     }),
   ],
   debug: true,
@@ -49,6 +71,18 @@ export const authOptions: NextAuthOptions = {
       }
       // Allow callbacks on the same origin
       if (url.startsWith(baseUrl)) return url;
+      // Allow redirects to any *.kotvim-code.luposec.io subdomain
+      // so that production OAuth callbacks can redirect back to previews
+      if (cookieDomain) {
+        try {
+          const urlObj = new URL(url);
+          if (urlObj.hostname.endsWith(cookieDomain)) {
+            return url;
+          }
+        } catch {
+          // invalid URL, fall through
+        }
+      }
       if (url.startsWith('/')) return `${baseUrl}${url}`;
       return `${baseUrl}/dashboard`;
     },
@@ -70,6 +104,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: 'lax',
         path: '/',
         secure: true,
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
       },
     },
     callbackUrl: {
@@ -78,6 +113,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: 'lax',
         path: '/',
         secure: true,
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
       },
     },
     csrfToken: {
@@ -87,6 +123,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: 'lax',
         path: '/',
         secure: true,
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
       },
     },
     pkceCodeVerifier: {
@@ -97,6 +134,7 @@ export const authOptions: NextAuthOptions = {
         path: '/',
         secure: true,
         maxAge: 900,
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
       },
     },
     state: {
@@ -107,6 +145,7 @@ export const authOptions: NextAuthOptions = {
         path: '/',
         secure: true,
         maxAge: 900,
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
       },
     },
     nonce: {
@@ -116,6 +155,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: 'lax',
         path: '/',
         secure: true,
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
       },
     },
   },

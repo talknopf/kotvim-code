@@ -127,6 +127,10 @@ jobs:
                         value: "production"
                       - name: NEXTAUTH_URL
                         value: "${PREVIEW_URL}"
+                      - name: AUTH_COOKIE_DOMAIN
+                        value: ".${{ env.BASE_DOMAIN }}"
+                      - name: AUTH_CALLBACK_BASE_URL
+                        value: "https://${{ env.BASE_DOMAIN }}"
                     resources:
                       requests:
                         cpu: 50m
@@ -221,7 +225,7 @@ jobs:
               `| **Commit** | \`${sha}\` |`,
               `| **Status** | ✅ Deployed |`,
               '',
-              '> **Note:** Google OAuth may not work in previews unless the redirect URI is added to the Google Cloud Console.',
+              '> **Note:** Google OAuth works via the production callback. Sign in routes through `kotvim-code.luposec.io` and the session is shared across all preview subdomains.',
               '> The preview shares the production database — lesson data and user sessions are live.',
             ].join('\n');
 
