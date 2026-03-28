@@ -126,10 +126,8 @@ jobs:
         run: npm install prisma@latest --no-save
 
       - name: Run Prisma DB Push
-        env:
-          DATABASE_URL: ${{ steps.db.outputs.database_url }}
         run: |
-          npx prisma db push --accept-data-loss
+          npx prisma db push --accept-data-loss --url "${{ steps.db.outputs.database_url }}"
           echo "Database schema pushed"
 
       # ── Restart Deployment ───────────────────────────
