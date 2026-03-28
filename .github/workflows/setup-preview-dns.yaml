@@ -25,6 +25,33 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Ensure Route 53 IAM permissions
+        run: |
+          ROLE_NAME="kotvim-code-github-actions"
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "route53-access" \
+            --policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [{
+                "Sid": "Route53HostedZones",
+                "Effect": "Allow",
+                "Action": [
+                  "route53:CreateHostedZone",
+                  "route53:GetHostedZone",
+                  "route53:ListHostedZones",
+                  "route53:ListHostedZonesByName",
+                  "route53:ChangeResourceRecordSets",
+                  "route53:ListResourceRecordSets",
+                  "route53:ListTagsForResource",
+                  "route53:GetChange"
+                ],
+                "Resource": "*"
+              }]
+            }'
+          echo "Route 53 IAM policy updated with ListTagsForResource"
+          sleep 5
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
