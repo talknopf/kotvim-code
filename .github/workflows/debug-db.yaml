@@ -53,11 +53,6 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           kubectl get pods -n ${{ env.K8S_NAMESPACE }} -o wide 2>&1 | tee -a $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Pod Describe" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          kubectl describe pods -n ${{ env.K8S_NAMESPACE }} -l app=kotvim-code 2>&1 | tail -80 | tee -a $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Check K8s secret keys
         run: |
@@ -85,87 +80,178 @@ jobs:
           " 2>&1 | tee -a $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Test TCP connectivity to RDS from cluster
+      - name: Test DB connection via Job (writes result to ConfigMap)
         run: |
-          kubectl delete pod db-tcp-test -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
-          cat <<EOF | kubectl apply -n ${{ env.K8S_NAMESPACE }} -f -
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            name: db-tcp-test
-          spec:
-            restartPolicy: Never
-            containers:
-              - name: test
-                image: busybox:1.36
-                command:
-                  - /bin/sh
-                  - -c
-                  - |
-                    echo "=== DNS Resolution ==="
-                    nslookup ${{ steps.rds.outputs.endpoint }} || echo "DNS FAILED"
-                    echo ""
-                    echo "=== TCP Connection Test (port 5432) ==="
-                    nc -zv -w 5 ${{ steps.rds.outputs.endpoint }} 5432 && echo "TCP OK" || echo "TCP FAILED"
-                    echo ""
-                    echo "=== Done ==="
-          EOF
-          echo "Waiting for TCP test pod..."
-          kubectl wait --for=condition=Ready pod/db-tcp-test -n ${{ env.K8S_NAMESPACE }} --timeout=30s 2>/dev/null || true
-          sleep 10
-          echo "## TCP Connectivity Test" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          kubectl logs db-tcp-test -n ${{ env.K8S_NAMESPACE }} 2>&1 | tee -a $GITHUB_STEP_SUMMARY || echo "Could not get logs"
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          kubectl delete pod db-tcp-test -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          # Clean up from previous runs
+          kubectl delete job db-test-job -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          kubectl delete configmap db-test-result -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
 
-      - name: Test PostgreSQL connection from cluster
-        run: |
-          kubectl delete pod db-pg-test -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          # Create a ServiceAccount-based RBAC so the Job can write a ConfigMap
           cat <<'EOF' | kubectl apply -n ${{ env.K8S_NAMESPACE }} -f -
           apiVersion: v1
-          kind: Pod
+          kind: ServiceAccount
           metadata:
-            name: db-pg-test
-          spec:
-            restartPolicy: Never
-            containers:
-              - name: test
-                image: node:20-slim
-                command:
-                  - /bin/bash
-                  - -c
-                  - |
-                    echo "=== DATABASE_URL structure ==="
-                    echo "$DATABASE_URL" | sed 's/:\/\/[^:]*:[^@]*@/:\/\/***:***@/'
-                    echo ""
-                    echo "=== Installing pg ==="
-                    npm install pg --no-save 2>&1 | tail -3
-                    echo ""
-                    echo "=== Testing connection with pg library ==="
-                    node -e "
-                    const { Pool } = require('pg');
-                    const pool = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10000 });
-                    pool.query('SELECT NOW() as now, current_database() as db, current_user as usr')
-                      .then(r => { console.log('SUCCESS:', JSON.stringify(r.rows[0])); process.exit(0); })
-                      .catch(e => { console.log('FAILED:', e.message); process.exit(1); });
-                    "
-                    echo ""
-                    echo "=== Done ==="
-                env:
-                  - name: DATABASE_URL
-                    valueFrom:
-                      secretKeyRef:
-                        name: kotvim-code-secrets
-                        key: DATABASE_URL
+            name: db-tester
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: db-tester-role
+          rules:
+            - apiGroups: [""]
+              resources: ["configmaps"]
+              verbs: ["create", "get", "update", "patch"]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: db-tester-binding
+          subjects:
+            - kind: ServiceAccount
+              name: db-tester
+          roleRef:
+            kind: Role
+            name: db-tester-role
+            apiGroup: rbac.authorization.k8s.io
           EOF
-          echo "Waiting for PG test pod..."
-          sleep 30
-          echo "## PostgreSQL Connection Test" >> $GITHUB_STEP_SUMMARY
+
+          # Create the test Job
+          cat <<'JOBEOF' | kubectl apply -n ${{ env.K8S_NAMESPACE }} -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: db-test-job
+          spec:
+            ttlSecondsAfterFinished: 300
+            backoffLimit: 0
+            template:
+              spec:
+                serviceAccountName: db-tester
+                restartPolicy: Never
+                containers:
+                  - name: test
+                    image: node:20-slim
+                    command:
+                      - /bin/bash
+                      - -c
+                      - |
+                        apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1
+
+                        RESULT=""
+                        add() { RESULT="$RESULT$1\n"; }
+
+                        add "=== DATABASE_URL structure ==="
+                        add "$(echo "$DATABASE_URL" | sed 's/:\/\/[^:]*:[^@]*@/:\/\/***:***@/')"
+                        add ""
+
+                        add "=== Installing pg ==="
+                        npm install pg --no-save 2>&1 | tail -3
+                        add ""
+
+                        add "=== Testing pg connection (10s timeout) ==="
+                        PG_RESULT=$(node -e "
+                        const { Pool } = require('pg');
+                        const pool = new Pool({
+                          connectionString: process.env.DATABASE_URL,
+                          connectionTimeoutMillis: 10000,
+                          ssl: false
+                        });
+                        pool.query('SELECT NOW() as now, current_database() as db, current_user as usr')
+                          .then(r => { console.log('SUCCESS: ' + JSON.stringify(r.rows[0])); pool.end(); })
+                          .catch(e => { console.log('FAILED: ' + e.message); pool.end(); process.exit(1); });
+                        " 2>&1)
+                        add "$PG_RESULT"
+                        add ""
+
+                        add "=== Testing pg connection WITHOUT ?schema=public ==="
+                        CLEAN_URL=$(echo "$DATABASE_URL" | sed 's/\?schema=public//')
+                        PG_RESULT2=$(DATABASE_URL="$CLEAN_URL" node -e "
+                        const { Pool } = require('pg');
+                        const pool = new Pool({
+                          connectionString: process.env.DATABASE_URL,
+                          connectionTimeoutMillis: 10000,
+                          ssl: false
+                        });
+                        pool.query('SELECT NOW() as now, current_database() as db')
+                          .then(r => { console.log('SUCCESS: ' + JSON.stringify(r.rows[0])); pool.end(); })
+                          .catch(e => { console.log('FAILED: ' + e.message); pool.end(); process.exit(1); });
+                        " 2>&1)
+                        add "$PG_RESULT2"
+                        add ""
+
+                        add "=== Testing with SSL ==="
+                        PG_RESULT3=$(node -e "
+                        const { Pool } = require('pg');
+                        const pool = new Pool({
+                          connectionString: process.env.DATABASE_URL,
+                          connectionTimeoutMillis: 10000,
+                          ssl: { rejectUnauthorized: false }
+                        });
+                        pool.query('SELECT 1 as ok')
+                          .then(r => { console.log('SSL SUCCESS: ' + JSON.stringify(r.rows[0])); pool.end(); })
+                          .catch(e => { console.log('SSL FAILED: ' + e.message); pool.end(); });
+                        " 2>&1)
+                        add "$PG_RESULT3"
+                        add ""
+
+                        add "=== Listing tables ==="
+                        TABLES=$(node -e "
+                        const { Pool } = require('pg');
+                        const pool = new Pool({
+                          connectionString: process.env.DATABASE_URL,
+                          connectionTimeoutMillis: 10000,
+                          ssl: false
+                        });
+                        pool.query(\"SELECT tablename FROM pg_tables WHERE schemaname='public'\")
+                          .then(r => { console.log(r.rows.map(r=>r.tablename).join(', ')); pool.end(); })
+                          .catch(e => { console.log('FAILED: ' + e.message); pool.end(); });
+                        " 2>&1)
+                        add "$TABLES"
+                        add ""
+                        add "=== Done ==="
+
+                        # Write result to a ConfigMap via K8s API
+                        TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                        NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+                        CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+                        # JSON-encode the result
+                        ENCODED=$(printf '%s' "$RESULT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo "\"encoding failed\"")
+
+                        curl -s --cacert $CA \
+                          -X POST \
+                          -H "Authorization: Bearer $TOKEN" \
+                          -H "Content-Type: application/json" \
+                          "https://kubernetes.default.svc/api/v1/namespaces/$NAMESPACE/configmaps" \
+                          -d "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"db-test-result\"},\"data\":{\"result\":$ENCODED}}"
+
+                        echo "Results written to ConfigMap db-test-result"
+                    env:
+                      - name: DATABASE_URL
+                        valueFrom:
+                          secretKeyRef:
+                            name: kotvim-code-secrets
+                            key: DATABASE_URL
+          JOBEOF
+
+          echo "Waiting for Job to complete (max 120s)..."
+          kubectl wait --for=condition=complete job/db-test-job \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=120s || {
+            echo "Job did not complete in time"
+            kubectl get job db-test-job -n ${{ env.K8S_NAMESPACE }} -o yaml 2>/dev/null | grep -A5 "status:" || true
+          }
+
+          echo "## DB Connection Test Results" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          kubectl logs db-pg-test -n ${{ env.K8S_NAMESPACE }} 2>&1 | tee -a $GITHUB_STEP_SUMMARY || echo "Could not get logs"
+          kubectl get configmap db-test-result -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.data.result}' 2>&1 | tee -a $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          kubectl delete pod db-pg-test -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+
+          # Cleanup
+          kubectl delete job db-test-job -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          kubectl delete configmap db-test-result -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          kubectl delete serviceaccount db-tester -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          kubectl delete role db-tester-role -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          kubectl delete rolebinding db-tester-binding -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
 
       - name: Get app pod logs
         run: |
