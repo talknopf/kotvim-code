@@ -27,3 +27,17 @@ variable "aws_account_id" {
   type        = string
   default     = "212601668346"
 }
+
+# ── RDS variables ──
+
+variable "rds_instance_class" {
+  description = "RDS instance class"
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "rds_allocated_storage" {
+  description = "RDS storage in GB"
+  type        = number
+  default     = 20
+}
