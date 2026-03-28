@@ -28,7 +28,8 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.7'
+          terraform_version: '1.7.5'
+          terraform_wrapper: false
 
       - name: Terraform Init
         working-directory: terraform
@@ -44,7 +45,7 @@ jobs:
 
       - name: Terraform Apply (DNS only)
         working-directory: terraform
-        run: terraform apply -auto-approve dns.tfplan
+        run: terraform apply dns.tfplan
 
       - name: Verify DNS record
         run: |
