@@ -2,7 +2,7 @@
 # RDS PostgreSQL – minimal instance for kotvim-code
 # ──────────────────────────────────────────────
 
-# ---------- look up EKS VPC & subnets ----------
+# ---------- look up EKS cluster ----------
 
 data "aws_eks_cluster" "main" {
   name = var.eks_cluster_name
@@ -12,66 +12,16 @@ locals {
   vpc_id = data.aws_eks_cluster.main.vpc_config[0].vpc_id
 }
 
-data "aws_subnets" "eks_private" {
-  filter {
-    name   = "vpc-id"
-    values = [local.vpc_id]
-  }
+# ---------- reference pre-existing resources ----------
+# These were created by the infra.yaml workflow
 
-  tags = {
-    "kubernetes.io/role/internal-elb" = "1"
-  }
+data "aws_db_subnet_group" "kotvim" {
+  name = "kotvim-code-db-subnet"
 }
 
-# Fallback: if no tagged private subnets, use all EKS subnets
-locals {
-  db_subnet_ids = length(data.aws_subnets.eks_private.ids) > 0 ? data.aws_subnets.eks_private.ids : tolist(data.aws_eks_cluster.main.vpc_config[0].subnet_ids)
-}
-
-# ---------- DB subnet group ----------
-
-resource "aws_db_subnet_group" "kotvim" {
-  name       = "kotvim-code-db-subnet"
-  subnet_ids = local.db_subnet_ids
-
-  tags = {
-    Name = "kotvim-code-db-subnet"
-  }
-}
-
-# ---------- security group ----------
-
-resource "aws_security_group" "rds" {
-  name        = "kotvim-code-rds-sg"
-  description = "Allow PostgreSQL from EKS cluster"
-  vpc_id      = local.vpc_id
-
-  ingress {
-    description     = "PostgreSQL from EKS cluster SG"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [data.aws_eks_cluster.main.vpc_config[0].cluster_security_group_id]
-  }
-
-  ingress {
-    description = "PostgreSQL from private RFC1918 ranges"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "kotvim-code-rds-sg"
-  }
+data "aws_security_group" "rds" {
+  name   = "kotvim-code-rds-sg"
+  vpc_id = local.vpc_id
 }
 
 # ---------- random password ----------
@@ -97,8 +47,8 @@ resource "aws_db_instance" "kotvim" {
   username = "kotvim"
   password = random_password.rds.result
 
-  db_subnet_group_name   = aws_db_subnet_group.kotvim.name
-  vpc_security_group_ids = [aws_security_group.rds.id]
+  db_subnet_group_name   = data.aws_db_subnet_group.kotvim.name
+  vpc_security_group_ids = [data.aws_security_group.rds.id]
   publicly_accessible    = false
 
   backup_retention_period = 7
@@ -107,10 +57,6 @@ resource "aws_db_instance" "kotvim" {
 
   tags = {
     Name = "kotvim-code-db"
-  }
-
-  lifecycle {
-    prevent_destroy = true
   }
 }
 

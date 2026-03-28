@@ -35,40 +35,14 @@ jobs:
           terraform_version: "1.9"
           terraform_wrapper: false
 
-      # ── Terraform Init ───────────────────────────────
+      # ── Terraform ────────────────────────────────────
       - name: Terraform Init
         working-directory: terraform
         run: terraform init -upgrade
 
-      # ── Import pre-existing resources ────────────────
-      - name: Import existing DB subnet group
-        working-directory: terraform
-        run: |
-          terraform import aws_db_subnet_group.kotvim kotvim-code-db-subnet 2>/dev/null || echo "Import skipped (not found or already in state)"
-
-      - name: Find and import existing security group
-        working-directory: terraform
-        run: |
-          VPC_ID=$(aws eks describe-cluster --name $EKS_CLUSTER_NAME --region $AWS_REGION --query 'cluster.resourcesVpcConfig.vpcId' --output text)
-          SG_ID=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=kotvim-code-rds-sg" "Name=vpc-id,Values=$VPC_ID" \
-            --region $AWS_REGION \
-            --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "None")
-          if [ "$SG_ID" != "None" ] && [ -n "$SG_ID" ]; then
-            terraform import aws_security_group.rds "$SG_ID" 2>/dev/null || echo "Import skipped (already in state)"
-          else
-            echo "No existing security group found"
-          fi
-
-      - name: Import existing RDS instance
-        working-directory: terraform
-        run: |
-          terraform import aws_db_instance.kotvim kotvim-code-db 2>/dev/null || echo "Import skipped (not found or already in state)"
-
-      # ── Terraform Plan & Apply ───────────────────────
       - name: Terraform Plan
         working-directory: terraform
-        run: terraform plan -target=aws_db_instance.kotvim -target=aws_security_group.rds -target=aws_db_subnet_group.kotvim -target=random_password.rds -out=tfplan
+        run: terraform plan -target=aws_db_instance.kotvim -target=random_password.rds -out=tfplan
 
       - name: Terraform Apply
         working-directory: terraform
