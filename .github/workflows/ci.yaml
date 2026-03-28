@@ -9,6 +9,8 @@ jobs:
   lint-typecheck-build:
     runs-on: ubuntu-latest
     name: Lint, Typecheck & Build
+    env:
+      DATABASE_URL: "postgresql://user:password@localhost:5432/mydb"
 
     steps:
       - name: Checkout code
