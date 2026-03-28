@@ -119,6 +119,9 @@ jobs:
       # ── Prisma DB Push (runs inside EKS cluster) ─────
       - name: Run Prisma DB Push via K8s Job
         run: |
+          # Delete any previous job if it exists
+          kubectl delete job prisma-db-push -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+
           # Create a one-off K8s job that clones the repo, installs prisma, and pushes schema
           cat <<'JOBEOF' | kubectl apply -n ${{ env.K8S_NAMESPACE }} -f -
           apiVersion: batch/v1
@@ -157,15 +160,16 @@ jobs:
           echo "Waiting for Prisma DB Push job to complete..."
           kubectl wait --for=condition=complete job/prisma-db-push \
             -n ${{ env.K8S_NAMESPACE }} --timeout=180s || {
-            echo "Job failed or timed out. Fetching logs..."
-            kubectl logs job/prisma-db-push -n ${{ env.K8S_NAMESPACE }} --tail=50
-            kubectl delete job prisma-db-push -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+            echo "Job failed or timed out. Attempting to fetch logs..."
+            kubectl logs job/prisma-db-push -n ${{ env.K8S_NAMESPACE }} --tail=50 || true
+            kubectl delete job prisma-db-push -n ${{ env.K8S_NAMESPACE }} --ignore-not-found || true
             exit 1
           }
 
           echo "Prisma DB Push succeeded"
-          kubectl logs job/prisma-db-push -n ${{ env.K8S_NAMESPACE }} --tail=20
-          kubectl delete job prisma-db-push -n ${{ env.K8S_NAMESPACE }} --ignore-not-found
+          # Log retrieval is best-effort (RBAC may lack pods/log permission)
+          kubectl logs job/prisma-db-push -n ${{ env.K8S_NAMESPACE }} --tail=20 || echo "(skipped: no pods/log permission)"
+          kubectl delete job prisma-db-push -n ${{ env.K8S_NAMESPACE }} --ignore-not-found || true
 
       # ── Restart Deployment ───────────────────────────
       - name: Restart deployment
