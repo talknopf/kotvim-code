@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint --ext .ts,.tsx,.js,.jsx src/",
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint --ext .ts,.tsx,.js,.jsx src/",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio"
