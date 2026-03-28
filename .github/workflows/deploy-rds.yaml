@@ -1,0 +1,146 @@
+name: Deploy RDS & Wire Secrets
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: eu-west-1
+  EKS_CLUSTER_NAME: pressto-prod
+  K8S_NAMESPACE: kotvim-code
+  TF_VAR_region: eu-west-1
+  TF_VAR_eks_cluster_name: pressto-prod
+
+jobs:
+  deploy-rds:
+    runs-on: ubuntu-latest
+    name: Terraform Apply → K8s Secrets → Prisma Migrate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9"
+          terraform_wrapper: false
+
+      # ── Terraform Apply ──────────────────────────────
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init -upgrade
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: terraform plan -target=aws_db_instance.kotvim -target=aws_security_group.rds -target=aws_db_subnet_group.kotvim -target=random_password.rds -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Get Terraform Outputs
+        id: tf
+        working-directory: terraform
+        run: |
+          RDS_ENDPOINT=$(terraform output -raw rds_address)
+          DATABASE_URL=$(terraform output -raw database_url)
+          echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "::add-mask::$DATABASE_URL"
+          echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
+
+      # ── Wait for RDS ─────────────────────────────────
+      - name: Wait for RDS to be available
+        run: |
+          echo "⏳ Waiting for RDS instance to become available..."
+          aws rds wait db-instance-available \
+            --db-instance-identifier kotvim-code-db \
+            --region ${{ env.AWS_REGION }}
+          echo "✅ RDS is ready: ${{ steps.tf.outputs.rds_endpoint }}"
+
+      # ── Upload state for safekeeping ─────────────────
+      - name: Upload Terraform State
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-state
+          path: terraform/terraform.tfstate
+          retention-days: 90
+
+      # ── Update K8s Secrets ───────────────────────────
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Generate NextAuth secret
+        id: nextauth
+        run: |
+          SECRET=$(openssl rand -base64 32)
+          echo "::add-mask::$SECRET"
+          echo "secret=$SECRET" >> $GITHUB_OUTPUT
+
+      - name: Update K8s secret
+        run: |
+          kubectl create secret generic kotvim-code-secrets \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            --from-literal=DATABASE_URL="${{ steps.tf.outputs.database_url }}" \
+            --from-literal=NEXTAUTH_SECRET="${{ steps.nextauth.outputs.secret }}" \
+            --from-literal=NEXTAUTH_URL="https://kotvim-code.luposec.io" \
+            --from-literal=GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --from-literal=GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "✅ K8s secret updated in namespace ${{ env.K8S_NAMESPACE }}"
+
+      # ── Prisma Migrations ────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Prisma CLI
+        run: npm install prisma@latest --no-save
+
+      - name: Run Prisma DB Push
+        env:
+          DATABASE_URL: ${{ steps.tf.outputs.database_url }}
+        run: |
+          npx prisma db push --accept-data-loss --skip-generate
+          echo "✅ Database schema pushed"
+
+      # ── Restart Deployment ───────────────────────────
+      - name: Restart deployment
+        run: |
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout restart deployment kotvim-code
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deployment kotvim-code --timeout=120s
+          echo "✅ Deployment restarted and healthy"
+
+      # ── Summary ──────────────────────────────────────
+      - name: Job Summary
+        run: |
+          echo "## 🚀 RDS Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **RDS Endpoint** | \`${{ steps.tf.outputs.rds_endpoint }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Instance** | \`db.t4g.micro\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Engine** | PostgreSQL 16 |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Database** | \`kotvim_code\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **K8s Secret** | \`kotvim-code-secrets\` updated |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Prisma** | Schema pushed ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployment** | Restarted ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Verify auth at https://kotvim-code.luposec.io" >> $GITHUB_STEP_SUMMARY
+          echo "2. Rotate Google OAuth client secret (it was leaked in logs)" >> $GITHUB_STEP_SUMMARY
+          echo "3. Download the \`terraform-state\` artifact and commit it to the repo" >> $GITHUB_STEP_SUMMARY
