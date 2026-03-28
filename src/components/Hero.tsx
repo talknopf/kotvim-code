@@ -13,7 +13,7 @@ export default function Hero() {
     if (session) {
       router.push('/dashboard');
     } else {
-      signIn('google');
+      signIn('google', { callbackUrl: '/dashboard' });
     }
   };
 
