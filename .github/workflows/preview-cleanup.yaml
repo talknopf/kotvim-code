@@ -1,0 +1,80 @@
+name: Preview Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: eu-west-1
+  EKS_CLUSTER_NAME: pressto-prod
+  ECR_REPOSITORY: kotvim-code
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    name: Cleanup PR Preview
+
+    steps:
+      - name: Set cleanup variables
+        id: vars
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          PREVIEW_NS="kotvim-code-pr-${PR_NUMBER}"
+          echo "pr_number=${PR_NUMBER}" >> $GITHUB_OUTPUT
+          echo "namespace=${PREVIEW_NS}" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Delete preview namespace
+        env:
+          NAMESPACE: ${{ steps.vars.outputs.namespace }}
+        run: |
+          if kubectl get namespace $NAMESPACE 2>/dev/null; then
+            echo "Deleting namespace $NAMESPACE..."
+            kubectl delete namespace $NAMESPACE --timeout=2m
+            echo "Preview namespace deleted."
+          else
+            echo "Namespace $NAMESPACE does not exist, nothing to clean up."
+          fi
+
+      - name: Clean up preview ECR images
+        env:
+          PR_NUMBER: ${{ steps.vars.outputs.pr_number }}
+        run: |
+          # Delete all images tagged with this PR number
+          IMAGE_IDS=$(aws ecr list-images \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --query "imageIds[?starts_with(imageTag, 'pr-${PR_NUMBER}-')]" \
+            --output json 2>/dev/null)
+
+          if [ "$IMAGE_IDS" != "[]" ] && [ "$IMAGE_IDS" != "null" ] && [ -n "$IMAGE_IDS" ]; then
+            echo "Deleting preview images for PR #${PR_NUMBER}..."
+            aws ecr batch-delete-image \
+              --repository-name ${{ env.ECR_REPOSITORY }} \
+              --image-ids "$IMAGE_IDS" || true
+            echo "Preview images cleaned up."
+          else
+            echo "No preview images found for PR #${PR_NUMBER}."
+          fi
+
+      - name: Summary
+        run: |
+          echo "✅ Preview environment for PR #${{ steps.vars.outputs.pr_number }} cleaned up."
+          echo "   - Namespace: ${{ steps.vars.outputs.namespace }} (deleted)"
+          echo "   - ECR images: pr-${{ steps.vars.outputs.pr_number }}-* (deleted)"
