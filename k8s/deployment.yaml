@@ -29,6 +29,8 @@ spec:
               value: "production"
             - name: NEXTAUTH_URL
               value: "https://kotvim-code.luposec.io"
+            - name: AUTH_COOKIE_DOMAIN
+              value: ".kotvim-code.luposec.io"
           resources:
             requests:
               cpu: 100m
