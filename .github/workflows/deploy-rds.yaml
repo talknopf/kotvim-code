@@ -35,11 +35,37 @@ jobs:
           terraform_version: "1.9"
           terraform_wrapper: false
 
-      # ── Terraform Apply ──────────────────────────────
+      # ── Terraform Init ───────────────────────────────
       - name: Terraform Init
         working-directory: terraform
         run: terraform init -upgrade
 
+      # ── Import pre-existing resources ────────────────
+      - name: Import existing DB subnet group
+        working-directory: terraform
+        run: |
+          terraform import aws_db_subnet_group.kotvim kotvim-code-db-subnet 2>/dev/null || echo "Import skipped (not found or already in state)"
+
+      - name: Find and import existing security group
+        working-directory: terraform
+        run: |
+          VPC_ID=$(aws eks describe-cluster --name $EKS_CLUSTER_NAME --region $AWS_REGION --query 'cluster.resourcesVpcConfig.vpcId' --output text)
+          SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=kotvim-code-rds-sg" "Name=vpc-id,Values=$VPC_ID" \
+            --region $AWS_REGION \
+            --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "None")
+          if [ "$SG_ID" != "None" ] && [ -n "$SG_ID" ]; then
+            terraform import aws_security_group.rds "$SG_ID" 2>/dev/null || echo "Import skipped (already in state)"
+          else
+            echo "No existing security group found"
+          fi
+
+      - name: Import existing RDS instance
+        working-directory: terraform
+        run: |
+          terraform import aws_db_instance.kotvim kotvim-code-db 2>/dev/null || echo "Import skipped (not found or already in state)"
+
+      # ── Terraform Plan & Apply ───────────────────────
       - name: Terraform Plan
         working-directory: terraform
         run: terraform plan -target=aws_db_instance.kotvim -target=aws_security_group.rds -target=aws_db_subnet_group.kotvim -target=random_password.rds -out=tfplan
@@ -61,11 +87,11 @@ jobs:
       # ── Wait for RDS ─────────────────────────────────
       - name: Wait for RDS to be available
         run: |
-          echo "⏳ Waiting for RDS instance to become available..."
+          echo "Waiting for RDS instance to become available..."
           aws rds wait db-instance-available \
             --db-instance-identifier kotvim-code-db \
             --region ${{ env.AWS_REGION }}
-          echo "✅ RDS is ready: ${{ steps.tf.outputs.rds_endpoint }}"
+          echo "RDS is ready: ${{ steps.tf.outputs.rds_endpoint }}"
 
       # ── Upload state for safekeeping ─────────────────
       - name: Upload Terraform State
@@ -100,7 +126,7 @@ jobs:
             --from-literal=GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          echo "✅ K8s secret updated in namespace ${{ env.K8S_NAMESPACE }}"
+          echo "K8s secret updated in namespace ${{ env.K8S_NAMESPACE }}"
 
       # ── Prisma Migrations ────────────────────────────
       - name: Setup Node.js
@@ -116,19 +142,19 @@ jobs:
           DATABASE_URL: ${{ steps.tf.outputs.database_url }}
         run: |
           npx prisma db push --accept-data-loss --skip-generate
-          echo "✅ Database schema pushed"
+          echo "Database schema pushed"
 
       # ── Restart Deployment ───────────────────────────
       - name: Restart deployment
         run: |
           kubectl -n ${{ env.K8S_NAMESPACE }} rollout restart deployment kotvim-code
           kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deployment kotvim-code --timeout=120s
-          echo "✅ Deployment restarted and healthy"
+          echo "Deployment restarted and healthy"
 
       # ── Summary ──────────────────────────────────────
       - name: Job Summary
         run: |
-          echo "## 🚀 RDS Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## RDS Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
@@ -137,8 +163,8 @@ jobs:
           echo "| **Engine** | PostgreSQL 16 |" >> $GITHUB_STEP_SUMMARY
           echo "| **Database** | \`kotvim_code\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **K8s Secret** | \`kotvim-code-secrets\` updated |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Prisma** | Schema pushed ✅ |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Deployment** | Restarted ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Prisma** | Schema pushed |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployment** | Restarted |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
           echo "1. Verify auth at https://kotvim-code.luposec.io" >> $GITHUB_STEP_SUMMARY
