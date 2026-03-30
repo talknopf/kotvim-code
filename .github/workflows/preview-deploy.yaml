@@ -199,7 +199,7 @@ jobs:
             -n $NAMESPACE --timeout=5m
 
       - name: Comment on PR with preview URL
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const previewUrl = '${{ steps.vars.outputs.url }}';
